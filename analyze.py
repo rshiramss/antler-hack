@@ -323,7 +323,7 @@ def _print_table(results: list[dict]) -> None:
 # ── Modal local entrypoint ────────────────────────────────────────────────────
 
 @app.local_entrypoint()
-def main(filepath: str) -> None:
+def main(filepath: str, emit_json: str = "") -> None:
     is_url = filepath.startswith("http")
     tmpdir = None
 
@@ -360,6 +360,14 @@ def main(filepath: str) -> None:
         if top.get("file"):
             print(f"  File: {top['file']}")
         print("Handoff contract — name, score, and source ready for Swarm B.\n")
+
+        # Persist the ranked results so Swarm B (run_stage2.py --swarm-a) can consume them.
+        if emit_json:
+            import json as _json
+            with open(emit_json, "w") as f:
+                _json.dump(results, f, indent=2)
+            print(f"  [handoff] wrote ranked candidates → {emit_json}")
+
         print("SWARM A GATE: PASS")
 
     finally:
@@ -372,13 +380,14 @@ def main(filepath: str) -> None:
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "test_functions.py"
-    subprocess.run(
-        [
-            "modal",
-            "run",
-            os.path.abspath(__file__),
-            "--filepath",
-            target,
-        ],
-        check=True,
-    )
+    emit_json = sys.argv[2] if len(sys.argv) > 2 else ""
+    cmd = [
+        "modal",
+        "run",
+        os.path.abspath(__file__),
+        "--filepath",
+        target,
+    ]
+    if emit_json:
+        cmd += ["--emit-json", os.path.abspath(emit_json)]
+    subprocess.run(cmd, check=True)

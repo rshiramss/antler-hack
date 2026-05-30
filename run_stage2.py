@@ -1,12 +1,20 @@
-"""Stage 2 runner: thin end-to-end slice.
+"""Stage 2 runner: thin end-to-end slice, driven by a TargetSpec.
 
 Flow:
   1. Check OPENAI_API_KEY
-  2. Build the naive Rust seed (call-through-GIL, always correct)
-  3. Smoke-test the naive seed
+  2. Build the naive Rust seed for the spec (call-through-GIL, always correct)
+  3. Smoke-test the naive seed against the spec's oracle
   4. Call try_one_port (LLM mutate → build → verify → benchmark)
   5. Print result and STAGE 2 GATE: PASS / FAIL
+
+Target selection:
+  * default                 → MICROGRAD_SPEC (backward compatible)
+  * --swarm-a <result.json> → build a TargetSpec from a Swarm A top candidate
+                              (analyze.py output: {name, source, file, ...})
+  * --oracle module:attr    → oracle for the Swarm A candidate (else self-port)
 """
+import argparse
+import json
 import os
 import sys
 import subprocess
@@ -15,49 +23,7 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
-NAIVE_SEED = """\
-// Naive seed: run_rust delegates to the Python oracle via the GIL.
-// Proves the pipeline compiles and the correctness gate passes.
-// set_oracle() must be called before run_rust().
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
-use pyo3::prelude::*;
-use std::sync::Mutex;
-
-static ORACLE_FN: Mutex<Option<Py<PyAny>>> = Mutex::new(None);
-
-#[pyfunction]
-fn set_oracle(oracle: Py<PyAny>) {
-    *ORACLE_FN.lock().unwrap() = Some(oracle);
-}
-
-#[pyfunction]
-fn run_rust<'py>(
-    py: Python<'py>,
-    inputs: PyReadonlyArray1<f64>,
-) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let oracle = {
-        let guard = ORACLE_FN.lock().unwrap();
-        guard
-            .as_ref()
-            .ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("oracle not set — call set_oracle() first")
-            })?
-            .clone_ref(py)
-    };
-    let input_arr = inputs.as_array().to_owned().into_pyarray(py);
-    let result = oracle.bind(py).call1((input_arr,))?;
-    result
-        .cast_into::<PyArray1<f64>>()
-        .map_err(|_| pyo3::exceptions::PyTypeError::new_err("oracle must return a 1-D f64 array"))
-}
-
-#[pymodule]
-fn rustforge_port(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(set_oracle, m)?)?;
-    m.add_function(wrap_pyfunction!(run_rust, m)?)?;
-    Ok(())
-}
-"""
+from target_spec import TargetSpec, MICROGRAD_SPEC, naive_seed
 
 
 def _maturin_build(lib_rs: str) -> tuple[bool, str]:
@@ -76,7 +42,34 @@ def _maturin_build(lib_rs: str) -> tuple[bool, str]:
     return proc.returncode == 0, proc.stderr
 
 
+def _resolve_spec(args) -> TargetSpec:
+    """Pick the TargetSpec to run from CLI args (Swarm A candidate, or micrograd)."""
+    if not args.swarm_a:
+        return MICROGRAD_SPEC
+    with open(args.swarm_a) as f:
+        result = json.load(f)
+    # analyze.py can emit either the single top candidate or the full ranked list.
+    if isinstance(result, list):
+        result = result[0]
+    return TargetSpec.from_swarm_a(result, oracle_path=args.oracle)
+
+
 def main():
+    parser = argparse.ArgumentParser(description="RustForge Stage 2 runner")
+    parser.add_argument(
+        "--swarm-a", metavar="JSON",
+        help="path to a Swarm A result JSON (top candidate or ranked list)",
+    )
+    parser.add_argument(
+        "--oracle", metavar="MODULE:ATTR",
+        help="dotted path to the reference oracle for the Swarm A candidate "
+             "(omit to self-port the candidate's own source)",
+    )
+    args = parser.parse_args()
+
+    spec = _resolve_spec(args)
+    print(f"=== Target: {spec.name} ===")
+
     # ── Preflight ────────────────────────────────────────────────────────────
     from mutate import _load_openai_key
     try:
@@ -87,7 +80,8 @@ def main():
 
     # ── Build naive seed ─────────────────────────────────────────────────────
     print("=== Building naive seed ===")
-    ok, stderr = _maturin_build(NAIVE_SEED)
+    seed = naive_seed(spec)
+    ok, stderr = _maturin_build(seed)
     if not ok:
         print(f"NAIVE SEED BUILD FAILED:\n{stderr}")
         sys.exit(1)
@@ -101,17 +95,25 @@ def main():
     env["PATH"] = f"{venv_bin}:{os.path.expanduser('~/.cargo/bin')}:{env.get('PATH', '')}"
     env["VIRTUAL_ENV"] = os.path.join(PROJECT_ROOT, ".venv")
 
+    spec_file = os.path.join(PROJECT_ROOT, ".rustforge_spec.json")
+    with open(spec_file, "w") as f:
+        f.write(spec.to_json())
+    env["RUSTFORGE_SPEC"] = spec_file
+
     smoke = subprocess.run(
         [venv_python, "-c", f"""
-import sys, numpy as np
+import sys, os, json, numpy as np
 sys.path.insert(0, {repr(PROJECT_ROOT)})
-from targets.micrograd.oracle import run_reference as oracle_fn
-import rustforge_port
-rustforge_port.set_oracle(oracle_fn)
-inp = np.array([0.5, -0.3], dtype=np.float64)
-r = np.asarray(rustforge_port.run_rust(inp))
-o = oracle_fn(inp)
-assert np.allclose(r, o, rtol=1e-5, atol=1e-6), f"smoke FAIL: {{r}} vs {{o}}"
+from target_spec import TargetSpec
+spec = TargetSpec.from_json(open(os.environ["RUSTFORGE_SPEC"]).read())
+oracle_fn = spec.load_oracle()
+import importlib
+mod = importlib.import_module(spec.module_name)
+mod.set_oracle(oracle_fn)
+inp = np.array(spec.default_fixed_input(), dtype=np.float64).reshape(spec.input_shape)
+r = np.asarray(mod.run_rust(inp))
+o = np.asarray(oracle_fn(inp))
+assert np.allclose(r, o, rtol=spec.rtol, atol=spec.atol), f"smoke FAIL: {{r}} vs {{o}}"
 print("Smoke test PASS — rust:", r, "oracle:", o)
 """],
         cwd=PROJECT_ROOT, capture_output=True, text=True, env=env,
@@ -123,18 +125,17 @@ print("Smoke test PASS — rust:", r, "oracle:", o)
 
     # ── try_one_port with retry-on-compiler-error ────────────────────────────
     print("\n=== Running try_one_port (LLM mutate → build → verify → benchmark) ===")
-    from targets.micrograd.oracle import run_reference as oracle_fn
     from try_one_port import try_one_port
 
     MAX_ATTEMPTS = 3
     result = None
     variant: dict = {}
+    parent = naive_seed(spec)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"\n--- Attempt {attempt}/{MAX_ATTEMPTS} ---")
         result = try_one_port(
-            parent_rust=NAIVE_SEED,
-            target_fn=oracle_fn,
-            oracle_fn=oracle_fn,
+            parent_rust=parent,
+            spec=spec,
             variant=variant,
         )
         if result["passed"]:

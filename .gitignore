@@ -41,3 +41,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# RustForge runtime artifacts
+.rustforge_spec.json

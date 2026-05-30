@@ -1,14 +1,12 @@
+"""The mutation operator: an LLM that ports a target Python function to Rust.
+
+The prompt is built dynamically from a TargetSpec (its source + description + the
+Rust signature skeleton) instead of being hardwired to the micrograd MLP. Point the
+pipeline at any TargetSpec and this writes the matching src/lib.rs.
+"""
 import os
 
-TARGET_DESCRIPTION = (
-    "Port the micrograd Value forward+backward MLP workload to Rust using PyO3. "
-    "The Rust function must be named run_rust, accept a 1-D numpy array of 2 float64 inputs "
-    "(PyReadonlyArray1<f64>), and return a 1-D numpy array of 3 float64 values: "
-    "[x0.grad, x1.grad, output.data] (Bound<'py, PyArray1<f64>>). "
-    "The MLP is 2->[4 ReLU neurons]->[1 linear neuron]. "
-    "The weights must match exactly what Python's random.seed(42) + MLP(2,[4,1]) produces. "
-    "The #[pymodule] name must be rustforge_port and match the [lib] name in Cargo.toml."
-)
+from target_spec import TargetSpec
 
 _SYSTEM_PROMPT = (
     "You are a Rust expert. Your job is to port a Python function to Rust using PyO3. "
@@ -34,82 +32,78 @@ def _load_openai_key() -> str:
     raise RuntimeError("No valid OpenAI key found (OPENAI_KEY in env or .env)")
 
 
-def mutate(parent_rust: str, target_description: str, compiler_error: str | None) -> str:
-    """Call gpt-4o-mini to mutate parent_rust toward target_description.
+def build_prompt(spec: TargetSpec, parent_rust: str, compiler_error: str | None) -> str:
+    """Assemble the user prompt for porting `spec` to Rust.
+
+    Pulls everything target-specific from the spec: the reference Python source, the
+    human description, the required Rust signature, and the #[pymodule] name. Nothing
+    micrograd-specific is hardcoded here anymore.
+    """
+    reference_section = (
+        f"\n\nREFERENCE PYTHON (port this exact behavior):\n```python\n{spec.source.strip()}\n```"
+        if spec.source.strip()
+        else ""
+    )
+
+    parent_section = (
+        f"\n\nCURRENT CHAMPION src/lib.rs (improve on this — make it faster while keeping it correct):\n"
+        f"```rust\n{parent_rust.strip()}\n```"
+        if parent_rust and parent_rust.strip()
+        else ""
+    )
+
+    error_section = (
+        f"\n\nCOMPILER/VERIFY ERROR from the previous attempt — the code below failed. Fix it:\n{compiler_error}"
+        if compiler_error
+        else ""
+    )
+
+    return f"""Write a Rust PyO3 extension (src/lib.rs) that implements `run_rust`.
+
+WHAT TO PORT:
+{spec.description}
+{reference_section}
+
+REQUIREMENTS:
+- The function must have exactly this signature:
+
+  {spec.rust_signature}
+
+- The #[pymodule] must be named `{spec.module_name}` and match the [lib] name in Cargo.toml.
+- Implement the computation directly in Rust. Do NOT call back into Python.
+- Be numerically faithful to the reference (the port is checked with np.allclose,
+  rtol={spec.rtol}, atol={spec.atol}, against hundreds of random fuzzed inputs).
+
+A minimal module shell looks like:
+
+use numpy::{{IntoPyArray, PyArray1, PyReadonlyArray1}};
+use pyo3::prelude::*;
+
+#[pyfunction]
+{spec.rust_signature} {{
+    let inp = inputs.as_array();
+    // ... your computation here ...
+}}
+
+#[pymodule]
+fn {spec.module_name}(m: &Bound<'_, PyModule>) -> PyResult<()> {{
+    m.add_function(wrap_pyfunction!(run_rust, m)?)?;
+    Ok(())
+}}
+{parent_section}{error_section}
+
+Return ONLY the complete src/lib.rs. No markdown fences, no text outside the Rust code."""
+
+
+def mutate(parent_rust: str, spec: TargetSpec, compiler_error: str | None) -> str:
+    """Call gpt-4o-mini to produce a Rust port of `spec`.
 
     Returns a raw Rust string (complete src/lib.rs contents).
     """
     import litellm
 
     api_key = _load_openai_key()
-
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(project_root, "targets", "micrograd", "oracle.py")) as f:
-        oracle_source = f.read()
-    with open(os.path.join(project_root, "targets", "micrograd", "engine.py")) as f:
-        engine_source = f.read()
-
-    error_section = (
-        f"\n\nCOMPILER ERROR from previous attempt — the code below failed to compile. Fix it:\n{compiler_error}"
-        if compiler_error
-        else ""
-    )
-
-    user_content = f"""Write a Rust PyO3 extension (src/lib.rs) that implements run_rust.
-
-EXACT COMPUTATION (do NOT build a Value class — implement this directly with scalars):
-
-Step 1 — forward pass with these hardcoded weights:
-  z0 =  0.27885360*x0 + (-0.94997849)*x1
-  z1 = -0.44994136*x0 + (-0.55357852)*x1
-  z2 =  0.47294243*x0 +   0.35339897*x1
-  z3 =  0.78435914*x0 + (-0.82612233)*x1
-  h0 = relu(z0)   // relu(v) = if v > 0.0 {{ v }} else {{ 0.0 }}
-  h1 = relu(z1)
-  h2 = relu(z2)
-  h3 = relu(z3)
-  out = (-0.15615636)*h0 + (-0.94040556)*h1 + (-0.56272405)*h2 + 0.01071058*h3
-
-Step 2 — backward pass (d_out = 1.0):
-  d_h0 = -0.15615636 * 1.0
-  d_h1 = -0.94040556 * 1.0
-  d_h2 = -0.56272405 * 1.0
-  d_h3 =  0.01071058 * 1.0
-  d_z0 = d_h0 * (if z0 > 0.0 {{ 1.0 }} else {{ 0.0 }})
-  d_z1 = d_h1 * (if z1 > 0.0 {{ 1.0 }} else {{ 0.0 }})
-  d_z2 = d_h2 * (if z2 > 0.0 {{ 1.0 }} else {{ 0.0 }})
-  d_z3 = d_h3 * (if z3 > 0.0 {{ 1.0 }} else {{ 0.0 }})
-  x0_grad =  0.27885360*d_z0 + (-0.44994136)*d_z1 + 0.47294243*d_z2 + 0.78435914*d_z3
-  x1_grad = -0.94997849*d_z0 + (-0.55357852)*d_z1 + 0.35339897*d_z2 + (-0.82612233)*d_z3
-
-Step 3 — return numpy array [x0_grad, x1_grad, out] as float64.
-
-REQUIRED src/lib.rs SKELETON (fill in the body of run_rust):
-
-use numpy::{{IntoPyArray, PyArray1, PyReadonlyArray1}};
-use pyo3::prelude::*;
-
-#[pyfunction]
-fn run_rust<'py>(
-    py: Python<'py>,
-    inputs: PyReadonlyArray1<f64>,
-) -> PyResult<Bound<'py, PyArray1<f64>>> {{
-    let inp = inputs.as_array();
-    let x0: f64 = inp[0];
-    let x1: f64 = inp[1];
-    // ... your forward+backward code here ...
-    let result = numpy::ndarray::Array1::from_vec(vec![x0_grad, x1_grad, out]);
-    Ok(result.into_pyarray(py))
-}}
-
-#[pymodule]
-fn rustforge_port(m: &Bound<'_, PyModule>) -> PyResult<()> {{
-    m.add_function(wrap_pyfunction!(run_rust, m)?)?;
-    Ok(())
-}}
-{error_section}
-
-Return ONLY the complete src/lib.rs with the body of run_rust filled in. No markdown fences, no text outside the Rust code."""
+    user_content = build_prompt(spec, parent_rust, compiler_error)
 
     response = litellm.completion(
         model="gpt-4o-mini",

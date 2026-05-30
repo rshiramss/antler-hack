@@ -1,12 +1,12 @@
 import os
-import sys
 import json
 import subprocess
-import numpy as np
 
-from mutate import mutate, TARGET_DESCRIPTION
+from mutate import mutate
+from target_spec import TargetSpec
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+_SPEC_FILE = os.path.join(PROJECT_ROOT, ".rustforge_spec.json")
 
 
 def _build(lib_rs: str) -> tuple[bool, str]:
@@ -30,13 +30,21 @@ def _build(lib_rs: str) -> tuple[bool, str]:
     return proc.returncode == 0, proc.stderr
 
 
-def _validate() -> dict:
-    """Run _validate.py in a fresh subprocess to pick up the newly built .so."""
+def _validate(spec: TargetSpec) -> dict:
+    """Run _validate.py in a fresh subprocess to pick up the newly built .so.
+
+    The spec is handed to the subprocess via a JSON file referenced by RUSTFORGE_SPEC,
+    so the validator loads the right oracle and I/O profile.
+    """
+    with open(_SPEC_FILE, "w") as f:
+        f.write(spec.to_json())
+
     venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
     venv_bin = os.path.join(PROJECT_ROOT, ".venv", "bin")
     env = os.environ.copy()
     env["PATH"] = f"{venv_bin}:{os.path.expanduser('~/.cargo/bin')}:{env.get('PATH', '')}"
     env["VIRTUAL_ENV"] = os.path.join(PROJECT_ROOT, ".venv")
+    env["RUSTFORGE_SPEC"] = _SPEC_FILE
 
     proc = subprocess.run(
         [venv_python, "_validate.py"],
@@ -61,15 +69,15 @@ def _validate() -> dict:
         }
 
 
-def try_one_port(parent_rust: str, target_fn, oracle_fn, variant: dict) -> dict:
-    """One cycle: mutate → build → verify → benchmark.
+def try_one_port(parent_rust: str, spec: TargetSpec, variant: dict) -> dict:
+    """One cycle: mutate → build → verify → benchmark, all driven by `spec`.
 
     Returns a result dict with keys: passed, speedup, error, code, variant,
     and (on success) python_ms, rust_ms.
     """
     # 1. Mutate
     print("  [mutate] calling LLM...")
-    candidate = mutate(parent_rust, TARGET_DESCRIPTION, variant.get("compiler_error"))
+    candidate = mutate(parent_rust, spec, variant.get("compiler_error"))
     print(f"  [mutate] received {len(candidate)} chars of Rust")
 
     # 2. Build
@@ -87,7 +95,7 @@ def try_one_port(parent_rust: str, target_fn, oracle_fn, variant: dict) -> dict:
 
     # 3. Validate (verify + benchmark) in a fresh subprocess
     print("  [validate] running verify + bench in subprocess...")
-    result = _validate()
+    result = _validate(spec)
     result["code"] = candidate
     result["variant"] = variant
     return result
