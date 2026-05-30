@@ -78,3 +78,47 @@ def load_solve(src: str):
     ns: dict = {}
     exec(src, ns)            # candidate is trusted-ish locally; Modal sandboxes it in the swarm
     return ns["solve"]
+
+
+# ---- Rust port (§8): the LLM rewrites lib.rs instead of Python ----------------
+_PROGRAM_RUST_PATH = os.path.join(os.path.dirname(__file__), "program_rust.md")
+
+# Seed = the hand-written, FFI-proven lib.rs (a known-correct floor for the ratchet).
+SEED_RUST = '''use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use pyo3::prelude::*;
+
+#[pyfunction]
+fn solve<'py>(py: Python<'py>, x: PyReadonlyArray1<'py, f64>) -> Bound<'py, PyArray1<f64>> {
+    let view = x.as_array();
+    let out: Vec<f64> = view.iter().map(|&v| v * v + 1.0).collect();
+    out.into_pyarray(py)
+}
+
+#[pymodule]
+fn rust_solve(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(solve, m)?)?;
+    Ok(())
+}
+'''
+
+
+def propose_rust(champion_src: str, history: str, temperature: float = 0.7) -> str:
+    """Ask the LLM to rewrite lib.rs faster while staying correct. Returns Rust source."""
+    with open(_PROGRAM_RUST_PATH) as f:
+        program = f.read()
+    messages = [
+        {"role": "system", "content": program},
+        {"role": "user", "content": (
+            f"Current champion lib.rs:\n```rust\n{champion_src}\n```\n\n"
+            f"Journal of past attempts (most recent last):\n{history or '(none yet)'}\n\n"
+            "Propose ONE change that makes it faster while keeping it numerically "
+            "identical. Return the COMPLETE lib.rs as a single ```rust block."
+        )},
+    ]
+    return _extract_rust(_complete(messages, temperature))
+
+
+def _extract_rust(text: str) -> str:
+    """Pull the rust source out of the model's ```rust ...``` block."""
+    m = re.search(r"```(?:rust)?\s*(.*?)```", text, re.DOTALL)
+    return (m.group(1) if m else text).strip()

@@ -86,12 +86,12 @@ environment but does **not** auto-load a `.env` (litellm_docs only sets
 
 ```bash
 # .env  — gitignored; never commit. Commit a keyless .env.example instead.
-OPENAI_API_KEY=your-openai-api-key
+OPENAI_API_KEY=sk-...        # or ANTHROPIC_API_KEY=... for a Claude model
 OPT_MODEL=gpt-5.5            # newest frontier model (May 2026); see §5 for options
 ```
 
-- **Local loop:** `mutate.py` calls `load_dotenv(override=True)` once at import,
-  so `.env` is picked up automatically and beats stale shell vars.
+- **Local loop:** `mutate.py` calls `load_dotenv()` once at import, so `.env` is
+  picked up automatically.
 - **Swarm:** `modal.Secret.from_dotenv()` reads the same `.env` and injects it into
   every container (`modal_docs/guide/secrets.md`) — **no `modal secret create` step
   needed**. (Needs `python-dotenv` installed.)

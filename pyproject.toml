@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "litellm>=1.86.2",
+    "maturin>=1.13.3",
     "modal>=1.4.3",
     "numpy>=2.4.6",
     "python-dotenv>=1.2.2",
