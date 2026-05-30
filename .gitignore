@@ -23,9 +23,26 @@
 /open_evolve/
 /whisper/
 
+# Secrets — never commit (commit a keyless .env.example instead)
+.env
+.env.local
+
+# Loop outputs (untracked, like autoresearch)
+results.tsv
+champion.py
+debug.jsonl
+
+# Rust build artifacts (PyO3/maturin) — never commit
+optimization/rust_solve/target/
+optimization/rust_solve/dist/
+*.whl
+
 # Local/editor noise
 .DS_Store
 __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# Rust loop output
+optimization/champion_lib.rs
