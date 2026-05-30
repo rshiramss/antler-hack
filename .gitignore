@@ -23,6 +23,18 @@
 /open_evolve/
 /whisper/
 
+# Secrets - never commit real credentials
+.env
+.env.local
+
+# Local agent/worktree state
+.claude/
+
+# Optimization run outputs
+optimization/results.tsv
+optimization/champion.py
+optimization/debug.jsonl
+
 # Local/editor noise
 .DS_Store
 __pycache__/
