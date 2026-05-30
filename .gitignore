@@ -34,6 +34,8 @@
 optimization/results.tsv
 optimization/champion.py
 optimization/debug.jsonl
+optimization/rust_solve/target/
+optimization/rust_solve/dist/
 
 # Local/editor noise
 .DS_Store

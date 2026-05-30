@@ -1,0 +1,13 @@
+[package]
+name = "rust_solve"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Must match the #[pymodule] name in src/lib.rs and the import name in Python.
+name = "rust_solve"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+numpy = "0.28"
