@@ -39,7 +39,7 @@ def main():
         status = "keep" if (r["passed"] and r["speedup"] > best) else \
                  ("discard" if r["passed"] else "crash")
         with open(_JOURNAL, "a") as f:
-            desc = r["error"] or f"speedup={r['speedup']:.2f}x"
+            desc = r.get("verdict") or r["error"] or f"speedup={r['speedup']:.2f}x"
             f.write(f"{round_n}\t{r['speedup']:.4f}\t{status}\t{desc}\n")
         history += f"round {round_n}: {status}, speedup={r['speedup']:.2f}x {r['error']}\n"
 
