@@ -1,0 +1,8 @@
+/Users/abrahambhatti/Desktop/RustForge/rust_template/target/release/build/target-lexicon-6cd6abe108f812a0/build_script_build-6cd6abe108f812a0.d: /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/build.rs /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/data_model.rs /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/triple.rs /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/targets.rs
+
+/Users/abrahambhatti/Desktop/RustForge/rust_template/target/release/build/target-lexicon-6cd6abe108f812a0/build_script_build-6cd6abe108f812a0: /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/build.rs /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/data_model.rs /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/triple.rs /Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/targets.rs
+
+/Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/build.rs:
+/Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/data_model.rs:
+/Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/triple.rs:
+/Users/abrahambhatti/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/target-lexicon-0.13.5/src/targets.rs:
