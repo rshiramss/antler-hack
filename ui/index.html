@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RustForge — Swarm Console</title>
+<style>
+  :root{
+    --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --line:#1d2535;
+    --ink:#e7ecf5; --dim:#8a97ad; --faint:#5a6678;
+    --queued:#2a3242; --spawn:#3b82f6; --compile:#f59e0b; --test:#a855f7;
+    --bench:#06b6d4; --pass:#22c55e; --fail:#ef4444; --crash:#b45309; --champ:#fbbf24;
+    --add:#13351f; --addln:#3ddc84; --del:#3a1416; --delln:#ff8a8a;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-rows:auto auto 1fr 26vh;height:100%;overflow:hidden}
+
+  /* header */
+  header{display:flex;align-items:center;gap:16px;padding:11px 18px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#0e1320,#0a0d14)}
+  .logo{font-family:var(--mono);font-weight:700;letter-spacing:.5px;font-size:18px}.logo b{color:var(--champ)}
+  .tag{color:var(--dim);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .spacer{flex:1}
+  .stat{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05}
+  .stat .v{font-family:var(--mono);font-size:21px;font-weight:700}.stat .l{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.8px}
+  .stat .v.gold{color:var(--champ)}.stat .v.live{color:var(--bench)}
+  .hero{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--dim)}
+  .hero b{color:var(--champ);font-size:21px}
+  select,button{font-family:var(--sans);font-size:12px;background:#0d1422;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer}
+  button:hover,select:hover{border-color:#2c3a55}
+  button.run{background:var(--champ);color:#1a1500;border:none;font-weight:700}
+  .conn{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+  .dot.sim{background:var(--compile);box-shadow:0 0 8px var(--compile)}.dot.liveok{background:var(--pass);box-shadow:0 0 8px var(--pass)}
+
+  /* process funnel strip */
+  .funnel{display:flex;align-items:stretch;gap:0;padding:9px 18px;border-bottom:1px solid var(--line);background:#0c111b}
+  .fstep{flex:1;display:flex;flex-direction:column;gap:2px;position:relative;padding:2px 14px}
+  .fstep+.fstep{border-left:1px solid #141c2b}
+  .fstep .n{font-family:var(--mono);font-size:18px;font-weight:700}
+  .fstep .lab{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.7px}
+  .fstep .lab b{color:var(--dim)}
+  .fstep .arrow{position:absolute;right:-7px;top:50%;transform:translateY(-50%);color:#243049;font-size:13px}
+  .fstep.gen .n{color:#9fb0c8}.fstep.comp .n{color:var(--compile)}.fstep.ver .n{color:var(--test)}
+  .fstep.fast .n{color:var(--pass)}.fstep.champ .n{color:var(--champ)}
+  .fstep .sub{font-size:10px;color:var(--faint)}.fstep .sub .bad{color:var(--delln)}
+
+  /* main */
+  main{display:grid;grid-template-columns:0.82fr 1.18fr;gap:11px;padding:11px;min-height:0}
+  .col{display:grid;gap:11px;min-height:0}
+  .col.left{grid-template-rows:1.2fr 1fr}
+  .col.right{grid-template-rows:1fr auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .hd{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--line)}
+  .hd h2{margin:0;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--dim)}
+  .hd .sub{font-size:11px;color:var(--faint);font-family:var(--mono)}.grow{flex:1}
+  .body{flex:1;min-height:0;overflow:auto}
+
+  /* swarm grid */
+  .swarm-wrap{padding:12px}
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+  .cell{position:relative;aspect-ratio:1/1;border-radius:7px;background:var(--queued);border:1px solid #1b2334;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#cfd8e8;transition:background .25s,box-shadow .25s,transform .12s}
+  .cell .id{opacity:.5;font-size:7px}.cell .sp{font-weight:700;font-size:10px}
+  .cell.spawning{background:var(--spawn)}.cell.compiling{background:var(--compile);color:#241a00}
+  .cell.testing{background:var(--test)}.cell.benchmarking{background:var(--bench);color:#03252b}
+  .cell.passed{background:var(--pass);color:#06210f}.cell.failed{background:var(--fail)}
+  .cell.crashed{background:var(--crash);color:#1c1200}
+  .cell.champion{background:var(--champ);color:#1a1500;box-shadow:0 0 0 2px #fff6,0 0 16px var(--champ);transform:scale(1.07);z-index:2}
+  .cell.active{animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 #fff0}50%{box-shadow:0 0 11px 1px #ffffff55}}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:11px;font-size:9.5px;color:var(--dim)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}.legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+  /* narration feed */
+  .feed{padding:6px 0;font-family:var(--mono);font-size:11px}
+  .line{display:flex;gap:8px;padding:4px 13px;border-bottom:1px solid #111824;animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+  .line .ic{width:14px;text-align:center}
+  .line .tx{color:#c4cfe0}.line .rd{color:var(--faint);margin-left:auto;font-size:9.5px}
+  .line.champ .tx{color:var(--champ);font-weight:700}.line.champ{background:#1c160625}
+  .line.hack .tx{color:var(--delln)}.line.crash .tx{color:#e0a35a}
+  .line.pass .tx{color:#8ee0a8}.line.stage .tx{color:#9aa7bd}.line.round .tx{color:#9fb0c8;font-weight:600}
+  .line.end{background:#0f1626}.line.end .tx{color:#9fb0c8}
+
+  /* champion diff */
+  .diffbanner{display:flex;align-items:center;gap:12px;padding:9px 13px;background:#0e1626;border-bottom:1px solid var(--line)}
+  .delta{font-family:var(--mono);font-weight:700;font-size:15px}
+  .delta .from{color:var(--faint)}.delta .to{color:var(--champ)}.delta .gain{color:var(--pass);font-size:13px;margin-left:4px}
+  .why{font-size:11.5px;color:var(--dim);flex:1}.why b{color:#cdd6e6}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg button{border:0;border-radius:0;background:#0d1422;font-size:10.5px;padding:5px 9px}
+  .seg button.on{background:#1c2740;color:#fff}
+  pre.code{margin:0;font-family:var(--mono);font-size:11px;line-height:1.55;white-space:pre;overflow:auto}
+  .dl{display:block;padding:0 12px 0 0;white-space:pre}
+  .dl .g{display:inline-block;width:22px;text-align:center;color:#46536b;user-select:none}
+  .dl.add{background:var(--add)}.dl.add .g{color:var(--addln)}
+  .dl.del{background:var(--del)}.dl.del .g{color:var(--delln)}
+  .code .kw{color:#7aa2ff}.code .ty{color:#5ad6c0}.code .mac{color:#e6a35a}.code .fn{color:#f0c674}.code .num{color:#d19a66}.code .cm{color:#5a6678;font-style:italic}.code .str{color:#9ece6a}
+
+  /* lineage ratchet */
+  .lineage{display:flex;align-items:flex-end;gap:0;padding:14px 14px 12px;overflow-x:auto}
+  .node{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;min-width:96px;position:relative}
+  .node .bar{width:34px;background:linear-gradient(180deg,#2a3450,#1a2236);border:1px solid #2c3a55;border-radius:5px 5px 0 0;transition:height .4s}
+  .node.on .bar{background:linear-gradient(180deg,#fbbf24,#b07e10);border-color:#fbbf24}
+  .node .sp{font-family:var(--mono);font-weight:700;font-size:12px;color:#cdd6e6}.node.on .sp{color:var(--champ)}
+  .node .desc{font-size:9px;color:var(--faint);text-align:center;max-width:92px;line-height:1.25}
+  .node .rnd{font-size:9px;color:var(--faint);font-family:var(--mono)}
+  .conn-line{align-self:center;color:#2c3a55;font-size:18px;padding:0 1px 18px}
+
+  /* journal */
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+  thead th{position:sticky;top:0;background:var(--panel2);color:var(--faint);text-align:left;font-weight:600;text-transform:uppercase;letter-spacing:.6px;font-size:9px;padding:7px 12px;border-bottom:1px solid var(--line)}
+  tbody td{padding:6px 12px;border-bottom:1px solid #131a27;white-space:nowrap}
+  tbody td.desc{white-space:normal;color:var(--dim)}tbody tr td.sp{font-weight:700}
+  .pill{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-radius:5px;padding:2px 7px}
+  .pill.keep{background:#0c3a20;color:#5ee08a}.pill.discard{background:#3a1414;color:#ff9a9a}.pill.crash{background:#3a2a0c;color:#f0c074}
+  tbody tr.flash{animation:rowflash 1s ease}@keyframes rowflash{from{background:#1d2740}to{background:transparent}}
+  .rh{color:#ff7b7b}.badge-hack{display:inline-block;margin-left:6px;font-size:8px;color:#ffb4b4;border:1px solid #5a2030;border-radius:4px;padding:1px 5px}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#1f2940;border-radius:6px}
+  /* ===== landing + analysis (Swarm A front door) ===== */
+  .screen{position:absolute;inset:0;z-index:5;background:radial-gradient(1100px 560px at 50% -8%,#141d30,#0a0d14)}
+  #landing{display:flex;align-items:center;justify-content:center}
+  .land-card{width:min(740px,92vw);text-align:center;padding:20px}
+  .logo.big{font-size:46px;letter-spacing:1px;margin-bottom:12px}
+  .land-sub{color:var(--dim);font-size:15px;max-width:580px;margin:0 auto 28px;line-height:1.55}
+  .land-input{display:flex;gap:10px;justify-content:center}
+  .land-input input{flex:1;max-width:520px;font-family:var(--mono);font-size:14px;padding:13px 15px;border-radius:10px;background:#0d1422;border:1px solid var(--line);color:var(--ink)}
+  .land-input input:focus{outline:none;border-color:var(--champ)}
+  .land-input button{padding:0 20px;font-size:14px}
+  .land-examples{margin-top:18px;color:var(--faint);font-size:12px;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .chip{background:#0f1626;border:1px solid var(--line);border-radius:999px;color:var(--dim);font-size:12px;padding:5px 11px;cursor:pointer;font-family:var(--mono)}
+  .chip:hover{border-color:var(--champ);color:var(--ink)}
+  .ghost{background:transparent;border:1px solid var(--line);color:var(--dim);font-size:11px}
+  #analysis{display:none;flex-direction:column;padding:18px 22px}
+  .an-head{display:flex;align-items:center;gap:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .an-repo{font-family:var(--mono);color:var(--champ);font-size:16px}
+  .an-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:16px;padding-top:16px;overflow:auto}
+  .an-scan{font-family:var(--mono);font-size:12.5px;color:#9fb0c8;background:#0c1119;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .an-scan div{padding:2px 0;animation:fade .3s ease}
+  .an-title{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+  .an-title span{color:var(--champ);font-family:var(--mono);text-transform:none;letter-spacing:0}
+  table.cands{width:100%;border-collapse:collapse}
+  table.cands th{text-align:left;font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;padding:8px 12px;border-bottom:1px solid var(--line)}
+  table.cands td{padding:11px 12px;border-bottom:1px solid #131a27;font-size:13px;vertical-align:middle}
+  table.cands tr.top{background:#12192a}
+  .fnname{font-family:var(--mono);color:var(--ink)}
+  .fnfile{font-family:var(--mono);color:var(--faint);font-size:11px;margin-top:2px}
+  .sigs{display:flex;gap:5px;flex-wrap:wrap}
+  .sig{font-size:9px;border-radius:5px;padding:2px 6px;border:1px solid #243049;color:#5a6678}
+  .sig.on{background:#0c2a1a;border-color:#1f6a44;color:#5ee08a}
+  .scorebar{display:inline-block;width:90px;height:8px;background:#1a2233;border-radius:5px;overflow:hidden;vertical-align:middle;margin-right:7px}
+  .scorebar i{display:block;height:100%;background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+  .cands .forge{background:var(--champ);color:#1a1500;border:none;border-radius:8px;padding:7px 13px;font-weight:700;font-size:12px;cursor:pointer}
+  .cands .forge:hover{filter:brightness(1.08)}
+</style>
+</head>
+<body>
+<!-- ================= LANDING — paste a GitHub repo ================= -->
+<section id="landing" class="screen">
+  <div class="land-card">
+    <div class="logo big">RUST<b>FORGE</b></div>
+    <div class="land-sub">Point it at a GitHub repo. A 50-wide Modal swarm finds its hottest Python function and rewrites it as <b style="color:#cdd6e6">verified-faster Rust</b> — provably equivalent, measurably faster.</div>
+    <div class="land-input">
+      <input id="repoUrl" type="text" spellcheck="false" placeholder="https://github.com/owner/repo" value="https://github.com/openai/whisper" />
+      <button id="analyzeBtn" class="run">Analyze repo →</button>
+    </div>
+    <div class="land-examples"><span>try:</span>
+      <button class="chip" data-url="https://github.com/openai/whisper">openai/whisper</button>
+      <button class="chip" data-url="https://github.com/demo/mandelbrot">demo/mandelbrot</button>
+      <button class="chip" data-url="https://github.com/acme/numerics">acme/numerics</button>
+    </div>
+  </div>
+</section>
+<!-- ================= ANALYSIS — Swarm A ranks functions ================= -->
+<section id="analysis" class="screen" style="display:none">
+  <div class="an-head">
+    <div class="logo">RUST<b>FORGE</b></div>
+    <div class="an-repo" id="anRepo">owner/repo</div>
+    <span style="flex:1"></span>
+    <button id="backBtn" class="ghost">← change repo</button>
+  </div>
+  <div class="an-body">
+    <div class="an-scan" id="anScan"></div>
+    <div class="an-list" id="anList" style="display:none">
+      <div class="an-title">Functions worth optimizing <span id="anCount"></span> — pick one to forge</div>
+      <table class="cands"><thead><tr><th>Function</th><th>Signals</th><th>Optimization score</th><th>Est. speedup</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+<div class="app" id="app" style="display:none">
+  <header>
+    <div class="logo">RUST<b>FORGE</b></div>
+    <div class="tag" id="targetTag">target: whisper_mel · matmul→log-mel</div>
+    <button id="newRepoBtn" class="ghost" title="analyze a different repo">↩ repo</button>
+    <div class="hero">baseline <b id="hBase">1.0×</b> &nbsp;→&nbsp; champion <b id="hBest">1.0×</b></div>
+    <div class="spacer"></div>
+    <div class="stat"><div class="v" id="sRound">0</div><div class="l">round</div></div>
+    <div class="stat"><div class="v live" id="sLive">0</div><div class="l">containers live</div></div>
+    <div class="stat"><div class="v" id="sAtt">0</div><div class="l">attempts</div></div>
+    <select id="targetSel" title="demo target">
+      <option value="whisper_mel">Whisper mel (matmul + log-mel)</option>
+      <option value="mandelbrot">Mandelbrot (escape-time loop)</option>
+    </select>
+    <button class="run" id="runBtn">▶ Run swarm</button>
+    <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">connecting…</span></div>
+  </header>
+
+  <!-- PROCESS FUNNEL (descriptive pipeline) -->
+  <div class="funnel" id="funnel">
+    <div class="fstep gen"><div class="n" id="fGen">0</div><div class="lab"><b>1</b> Generate · LLM mutates Rust</div><span class="arrow">▶</span></div>
+    <div class="fstep comp"><div class="n" id="fComp">0</div><div class="lab"><b>2</b> Compile · maturin --release</div><div class="sub"><span class="bad" id="fCrash">0</span> compile errors</div><span class="arrow">▶</span></div>
+    <div class="fstep ver"><div class="n" id="fVer">0</div><div class="lab"><b>3</b> Verify · 300 fuzzed inputs</div><div class="sub"><span class="bad" id="fHack">0</span> reward-hacks caught</div><span class="arrow">▶</span></div>
+    <div class="fstep fast"><div class="n" id="fFast">0</div><div class="lab"><b>4</b> Benchmark · faster than champ</div><span class="arrow">▶</span></div>
+    <div class="fstep champ"><div class="n" id="fChamp">0</div><div class="lab"><b>5</b> Keep · new champion</div></div>
+  </div>
+
+  <main>
+    <div class="col left">
+      <!-- SWARM -->
+      <section class="card">
+        <div class="hd"><h2>Swarm · Modal containers</h2><span class="sub grow" id="swarmSub">round 0 — idle</span><span class="sub">compile · fuzz · bench</span></div>
+        <div class="body swarm-wrap">
+          <div class="grid" id="grid"></div>
+          <div class="legend">
+            <span><i style="background:var(--spawn)"></i>spawn</span><span><i style="background:var(--compile)"></i>compile</span>
+            <span><i style="background:var(--test)"></i>fuzz-verify</span><span><i style="background:var(--bench)"></i>bench</span>
+            <span><i style="background:var(--pass)"></i>correct+faster</span><span><i style="background:var(--fail)"></i>rejected</span>
+            <span><i style="background:var(--crash)"></i>compile err</span><span><i style="background:var(--champ)"></i>champion</span>
+          </div>
+        </div>
+      </section>
+      <!-- NARRATION -->
+      <section class="card">
+        <div class="hd"><h2>Process · live</h2><span class="sub grow"></span><span class="sub">plain-English play-by-play</span></div>
+        <div class="body"><div class="feed" id="feed"></div></div>
+      </section>
+    </div>
+
+    <div class="col right">
+      <!-- CHAMPION DIFF (the point: clear code improvements) -->
+      <section class="card">
+        <div class="hd"><h2>Improvement · src/lib.rs</h2><span class="sub grow" id="diffTitle">waiting for first champion…</span>
+          <div class="seg"><button id="segDiff" class="on">Diff</button><button id="segFull">Full file</button></div></div>
+        <div class="diffbanner" id="diffBanner" style="display:none">
+          <div class="delta"><span class="from" id="dFrom">1.0×</span> → <span class="to" id="dTo">1.0×</span><span class="gain" id="dGain"></span></div>
+          <div class="why" id="dWhy"></div>
+        </div>
+        <div class="body"><pre class="code" id="code"><span class="cm">// the swarm hasn't crowned a champion yet — hit ▶ Run swarm</span></pre></div>
+      </section>
+      <!-- LINEAGE RATCHET -->
+      <section class="card">
+        <div class="hd"><h2>Champion lineage · keep/discard ratchet</h2><span class="sub grow"></span><span class="sub">click a step to inspect its change</span></div>
+        <div class="lineage" id="lineage"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- JOURNAL -->
+  <section class="card" style="margin:0 11px 11px;min-height:0">
+    <div class="hd"><h2>Autoresearch journal</h2><span class="sub">id · speedup · status · description &nbsp;(keep-if-faster · fitness = 0 on any correctness failure)</span></div>
+    <div class="body"><table><thead><tr><th style="width:60px">id</th><th style="width:86px">speedup</th><th style="width:84px">status</th><th>description</th></tr></thead><tbody id="journal"></tbody></table></div>
+  </section>
+</div>
+
+<script>
+/* ============================================================================
+   EVENT SCHEMA — contract between the Modal swarm and this dashboard.
+   The backend (ui/server.py push_event, fed by evolve.py) emits these over
+   ws://<host>/ws. The simulator below emits the EXACT same objects.
+     {type:"round_start", round, target, n_cells}
+     {type:"cell_update", round, cell, status, model}
+     {type:"cell_result", round, cell, passed, speedup, status, description, reward_hack}
+     {type:"champion",    round, speedup, code, description, why, cell}   // code/why drive the diff
+     {type:"journal",     id, speedup, status, description, reward_hack}
+     {type:"round_end",   round, best_speedup, kept}
+   Narration + the funnel are DERIVED client-side from these — no extra events.
+   ============================================================================ */
+const N=50, $=s=>document.querySelector(s);
+const state={round:0,best:1.0,attempts:0,target:'whisper_mel',
+  lineage:[], prevCode:'', funnel:{}, announced:new Set(), jid:0};
+
+/* ---- champion code sequences (the visible improvements). Each step differs
+   from the previous by a few lines so the diff is meaningful. ---- */
+const SEQ={
+  whisper_mel:[
+   {sp:1.0,desc:'seed naive port',why:'Literal translation — correct, but no faster than NumPy/BLAS.',code:
+`use pyo3::prelude::*;
+use numpy::{PyReadonlyArray2, PyArray2, IntoPyArray};
+use numpy::ndarray::Array2;
+
+#[pyfunction]
+fn log_mel<'py>(py: Python<'py>,
+                f: PyReadonlyArray2<'py, f32>,
+                m: PyReadonlyArray2<'py, f32>) -> Bound<'py, PyArray2<f32>> {
+    let mel = f.as_array().dot(&m.as_array());      // BLAS matmul
+    let out = mel.mapv(|v| v.max(1e-10).log10());   // second pass over the data
+    out.into_pyarray(py)
+}`},
+   {sp:1.9,desc:'rayon par_iter over rows + fuse log',why:'Run output rows on every core, and <b>fuse</b> the matmul and log into one pass (kills the temp array).',code:
+`use pyo3::prelude::*;
+use numpy::{PyReadonlyArray2, PyArray2, IntoPyArray};
+use numpy::ndarray::{Array2, Axis};
+use rayon::prelude::*;
+
+#[pyfunction]
+fn log_mel<'py>(py: Python<'py>,
+                f: PyReadonlyArray2<'py, f32>,
+                m: PyReadonlyArray2<'py, f32>) -> Bound<'py, PyArray2<f32>> {
+    let (a, b) = (f.as_array(), m.as_array());
+    let mut out = Array2::<f32>::zeros((a.nrows(), b.ncols()));
+    out.axis_iter_mut(Axis(0)).into_par_iter().enumerate().for_each(|(i, mut row)| {
+        for j in 0..b.ncols() {
+            let mut acc = 0.0f32;
+            for k in 0..a.ncols() { acc += a[[i, k]] * b[[k, j]]; }
+            row[j] = acc.max(1e-10).log10();        // fused: dot + log, one pass
+        }
+    });
+    out.into_pyarray(py)
+}`},
+   {sp:3.1,desc:'uget() — elide bounds checks',why:'Drop per-element bounds checks in the hot loop with <b>unsafe uget()</b>.',code:
+`use pyo3::prelude::*;
+use numpy::{PyReadonlyArray2, PyArray2, IntoPyArray};
+use numpy::ndarray::{Array2, Axis};
+use rayon::prelude::*;
+
+#[pyfunction]
+fn log_mel<'py>(py: Python<'py>,
+                f: PyReadonlyArray2<'py, f32>,
+                m: PyReadonlyArray2<'py, f32>) -> Bound<'py, PyArray2<f32>> {
+    let (a, b) = (f.as_array(), m.as_array());
+    let mut out = Array2::<f32>::zeros((a.nrows(), b.ncols()));
+    out.axis_iter_mut(Axis(0)).into_par_iter().enumerate().for_each(|(i, mut row)| {
+        for j in 0..b.ncols() {
+            let mut acc = 0.0f32;
+            for k in 0..a.ncols() {
+                unsafe { acc += a.uget((i, k)) * b.uget((k, j)); }   // no bounds check
+            }
+            row[j] = acc.max(1e-10).log10();
+        }
+    });
+    out.into_pyarray(py)
+}`},
+   {sp:4.4,desc:'transpose b for cache locality',why:'Transpose <b>b</b> once so the inner product walks <b>contiguous</b> memory instead of striding columns.',code:
+`use pyo3::prelude::*;
+use numpy::{PyReadonlyArray2, PyArray2, IntoPyArray};
+use numpy::ndarray::{Array2, Axis};
+use rayon::prelude::*;
+
+#[pyfunction]
+fn log_mel<'py>(py: Python<'py>,
+                f: PyReadonlyArray2<'py, f32>,
+                m: PyReadonlyArray2<'py, f32>) -> Bound<'py, PyArray2<f32>> {
+    let (a, b) = (f.as_array(), m.as_array());
+    let bt = b.t();                                  // column access -> row access
+    let mut out = Array2::<f32>::zeros((a.nrows(), bt.nrows()));
+    out.axis_iter_mut(Axis(0)).into_par_iter().enumerate().for_each(|(i, mut row)| {
+        let ai = a.row(i);
+        for j in 0..bt.nrows() {
+            let bj = bt.row(j);
+            let mut acc = 0.0f32;
+            for k in 0..ai.len() { unsafe { acc += ai.uget(k) * bj.uget(k); } }
+            row[j] = acc.max(1e-10).log10();
+        }
+    });
+    out.into_pyarray(py)
+}`},
+   {sp:5.6,desc:'4 accumulators — break dep chain',why:'Four independent accumulators expose <b>instruction-level parallelism</b> the CPU can pipeline.',code:
+`        let ai = a.row(i);
+        for j in 0..bt.nrows() {
+            let bj = bt.row(j);
+            let (n, mut acc) = (ai.len(), [0.0f32; 4]);
+            let mut k = 0;
+            while k + 4 <= n {
+                unsafe {
+                    acc[0] += ai.uget(k)   * bj.uget(k);
+                    acc[1] += ai.uget(k+1) * bj.uget(k+1);
+                    acc[2] += ai.uget(k+2) * bj.uget(k+2);
+                    acc[3] += ai.uget(k+3) * bj.uget(k+3);
+                }
+                k += 4;
+            }
+            let mut s = acc[0] + acc[1] + acc[2] + acc[3];
+            while k < n { unsafe { s += ai.uget(k) * bj.uget(k); } k += 1; }
+            row[j] = s.max(1e-10).log10();
+        }`},
+   {sp:6.8,desc:'std::simd f32x8',why:'Explicit <b>f32x8 SIMD</b> — eight multiply-adds per instruction on the inner product.',code:
+`        use std::simd::{f32x8, num::SimdFloat};
+        let ai = a.row(i); let ai_s = ai.as_slice().unwrap();
+        for j in 0..bt.nrows() {
+            let bj_s = bt.row(j); let bj_s = bj_s.as_slice().unwrap();
+            let (n, mut v) = (ai_s.len(), f32x8::splat(0.0));
+            let mut k = 0;
+            while k + 8 <= n {
+                v += f32x8::from_slice(&ai_s[k..]) * f32x8::from_slice(&bj_s[k..]);
+                k += 8;
+            }
+            let mut s = v.reduce_sum();
+            while k < n { s += ai_s[k] * bj_s[k]; k += 1; }
+            row[j] = s.max(1e-10).log10();
+        }`},
+  ],
+  mandelbrot:[
+   {sp:1.0,desc:'seed escape-time loop',why:'Per-pixel escape-time, single thread.',code:
+`#[pyfunction]
+fn mandel<'py>(py: Python<'py>, w: usize, h: usize, max_it: u32)
+        -> Bound<'py, PyArray2<u32>> {
+    let mut out = Array2::<u32>::zeros((h, w));
+    for y in 0..h { for x in 0..w {
+        let (cx, cy) = px_to_c(x, y, w, h);
+        let (mut zx, mut zy) = (0.0f64, 0.0f64);
+        let mut n = 0;
+        while zx*zx + zy*zy <= 4.0 && n < max_it {
+            let t = zx*zx - zy*zy + cx; zy = 2.0*zx*zy + cy; zx = t; n += 1;
+        }
+        out[[y, x]] = n;
+    }}
+    out.into_pyarray(py)
+}`},
+   {sp:6.0,desc:'rayon par_chunks over rows',why:'Each scanline renders on its own core via <b>par_chunks_mut</b>.',code:
+`use rayon::prelude::*;
+#[pyfunction]
+fn mandel<'py>(py: Python<'py>, w: usize, h: usize, max_it: u32)
+        -> Bound<'py, PyArray2<u32>> {
+    let mut buf = vec![0u32; w * h];
+    buf.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+        for x in 0..w {
+            let (cx, cy) = px_to_c(x, y, w, h);
+            let (mut zx, mut zy) = (0.0f64, 0.0f64);
+            let mut n = 0;
+            while zx*zx + zy*zy <= 4.0 && n < max_it {
+                let t = zx*zx - zy*zy + cx; zy = 2.0*zx*zy + cy; zx = t; n += 1;
+            }
+            row[x] = n;
+        }
+    });
+    Array2::from_shape_vec((h, w), buf).unwrap().into_pyarray(py)
+}`},
+   {sp:18.0,desc:'reuse z² terms',why:'Track x² and y² and reuse them — <b>3 multiplies per iteration</b> instead of 5.',code:
+`        for x in 0..w {
+            let (cx, cy) = px_to_c(x, y, w, h);
+            let (mut zx, mut zy) = (0.0f64, 0.0f64);
+            let (mut x2, mut y2) = (0.0f64, 0.0f64);
+            let mut n = 0;
+            while x2 + y2 <= 4.0 && n < max_it {
+                zy = 2.0*zx*zy + cy;
+                zx = x2 - y2 + cx;
+                x2 = zx*zx; y2 = zy*zy;          // reuse squares
+                n += 1;
+            }
+            row[x] = n;
+        }`},
+   {sp:34.0,desc:'cardioid + bulb early-out',why:'Analytic test skips the two biggest interior regions <b>instantly</b> (no iteration).',code:
+`        for x in 0..w {
+            let (cx, cy) = px_to_c(x, y, w, h);
+            let q = (cx - 0.25).powi(2) + cy*cy;                 // main cardioid
+            let in_bulb = (cx + 1.0).powi(2) + cy*cy <= 0.0625;  // period-2 bulb
+            if q*(q + (cx - 0.25)) <= 0.25*cy*cy || in_bulb { row[x] = max_it; continue; }
+            let (mut zx, mut zy, mut x2, mut y2, mut n) = (0.0,0.0,0.0,0.0,0);
+            while x2 + y2 <= 4.0 && n < max_it {
+                zy = 2.0*zx*zy + cy; zx = x2 - y2 + cx; x2 = zx*zx; y2 = zy*zy; n += 1;
+            }
+            row[x] = n;
+        }`},
+   {sp:52.0,desc:'f64x8 SIMD over 8 pixels',why:'Eight horizontal pixels share one lane-masked escape-time loop (<b>f64x8</b>).',code:
+`use std::simd::{f64x8, u32x8, cmp::SimdPartialOrd, num::SimdFloat};
+        let mut x = 0;
+        while x + 8 <= w {
+            let cx = f64x8::from_array(std::array::from_fn(|l| px_x(x + l, w)));
+            let cy = f64x8::splat(px_y(y, h));
+            let (mut zx, mut zy) = (f64x8::splat(0.0), f64x8::splat(0.0));
+            let mut n = u32x8::splat(0);
+            for _ in 0..max_it {
+                let m = (zx*zx + zy*zy).simd_le(f64x8::splat(4.0));
+                if !m.any() { break; }
+                let t = zx*zx - zy*zy + cx; zy = f64x8::splat(2.0)*zx*zy + cy; zx = t;
+                n += m.select(u32x8::splat(1), u32x8::splat(0));
+            }
+            n.copy_to_slice(&mut row[x..x+8]);
+            x += 8;
+        }`},
+   {sp:88.0,desc:'SIMD + early-out combined',why:'Interior early-out <b>plus</b> f64x8 lanes together — the full optimized kernel.',code:
+`use std::simd::{f64x8, u32x8, mask64x8, cmp::SimdPartialOrd, num::SimdFloat};
+        let mut x = 0;
+        while x + 8 <= w {
+            let cx = f64x8::from_array(std::array::from_fn(|l| px_x(x + l, w)));
+            let cy = f64x8::splat(px_y(y, h));
+            let q  = (cx - f64x8::splat(0.25))*(cx - f64x8::splat(0.25)) + cy*cy;
+            let interior = (q*(q + cx - f64x8::splat(0.25))).simd_le(f64x8::splat(0.25)*cy*cy);
+            let (mut zx, mut zy) = (f64x8::splat(0.0), f64x8::splat(0.0));
+            let mut n = interior.select(u32x8::splat(max_it), u32x8::splat(0));
+            let mut live: mask64x8 = !interior;
+            for _ in 0..max_it {
+                live &= (zx*zx + zy*zy).simd_le(f64x8::splat(4.0));
+                if !live.any() { break; }
+                let t = zx*zx - zy*zy + cx; zy = f64x8::splat(2.0)*zx*zy + cy; zx = t;
+                n += live.cast().select(u32x8::splat(1), u32x8::splat(0));
+            }
+            n.copy_to_slice(&mut row[x..x+8]);
+            x += 8;
+        }`},
+  ],
+};
+
+/* ---- grid ---- */
+const grid=$('#grid'); const ACTIVE=new Set(['spawning','compiling','testing','benchmarking']);
+function buildGrid(){grid.innerHTML='';for(let i=0;i<N;i++){const c=document.createElement('div');c.className='cell';c.id='c'+i;c.innerHTML=`<span class="id">c-${String(i).padStart(2,'0')}</span><span class="sp"></span>`;grid.appendChild(c);}}
+function setCell(i,st,sp){const c=$('#c'+i);if(!c)return;c.className='cell '+st+(ACTIVE.has(st)?' active':'');c.querySelector('.sp').textContent=(st==='passed'||st==='champion')&&sp?sp.toFixed(1)+'×':'';}
+function live(){const n=[...grid.children].filter(c=>[...ACTIVE].some(s=>c.classList.contains(s))).length;$('#sLive').textContent=n;}
+
+/* ---- funnel ---- */
+function resetFunnel(){state.funnel={gen:N,comp:0,ver:0,fast:0,crash:0,hack:0,champ:0};renderFunnel();}
+function renderFunnel(){const f=state.funnel;$('#fGen').textContent=f.gen||0;$('#fComp').textContent=f.comp||0;
+  $('#fVer').textContent=f.ver||0;$('#fFast').textContent=f.fast||0;$('#fChamp').textContent=f.champ||0;
+  $('#fCrash').textContent=f.crash||0;$('#fHack').textContent=f.hack||0;}
+
+/* ---- narration ---- */
+function narrate(txt,cls){const feed=$('#feed');const d=document.createElement('div');d.className='line '+(cls||'');
+  const ic={round:'▸',stage:'⚙',pass:'✓',champ:'★',hack:'✗',crash:'⚠',end:'▣'}[cls]||'·';
+  d.innerHTML=`<span class="ic">${ic}</span><span class="tx">${txt}</span><span class="rd">R${state.round}</span>`;
+  feed.prepend(d); while(feed.children.length>90)feed.removeChild(feed.lastChild);}
+
+/* ---- rust highlight + diff ---- */
+function hl(src){let s=src.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s=s.replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>');
+  s=s.replace(/("(?:[^"\\]|\\.)*")/g,'<span class="str">$1</span>');
+  s=s.replace(/#\[([^\]]*)\]/g,'<span class="mac">#[$1]</span>');
+  s=s.replace(/\b(fn|let|mut|pub|use|mod|for|in|if|else|unsafe|return|as|impl|self|move|while|continue|break)\b/g,'<span class="kw">$1</span>');
+  s=s.replace(/\b(f32|f64|u32|usize|i32|i64|u8|Array2|ArrayView2|PyArray2|PyReadonlyArray2|Python|Bound|Vec|Axis|f32x8|f64x8|u32x8|mask64x8)\b/g,'<span class="ty">$1</span>');
+  s=s.replace(/\b(\d+\.?\d*(?:e-?\d+)?)\b/g,'<span class="num">$1</span>');
+  s=s.replace(/\b(par_iter|into_par_iter|par_chunks_mut|axis_iter_mut|into_pyarray|as_array|as_slice|uget|dot|mapv|map|collect|enumerate|for_each|splat|from_slice|from_array|reduce_sum|copy_to_slice|select|simd_le|any|zeros|from_shape_vec|powi|max|log10)\b/g,'<span class="fn">$1</span>');
+  return s;}
+function diffLines(aStr,bStr){const a=(aStr||'').split('\n'),b=bStr.split('\n'),m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},()=>new Int32Array(n+1));
+  for(let i=m-1;i>=0;i--)for(let j=n-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const o=[];let i=0,j=0;
+  while(i<m&&j<n){if(a[i]===b[j]){o.push(['ctx',a[i]]);i++;j++;}else if(dp[i+1][j]>=dp[i][j+1]){o.push(['del',a[i]]);i++;}else{o.push(['add',b[j]]);j++;}}
+  while(i<m)o.push(['del',a[i++]]);while(j<n)o.push(['add',b[j++]]);return o;}
+let viewMode='diff';
+function renderCode(){const cur=state.lineage[state.viewIdx]; if(!cur){return;}
+  const code=$('#code');
+  if(viewMode==='full'||state.viewIdx===0){
+    code.innerHTML=cur.code.split('\n').map(l=>`<span class="dl"><span class="g"> </span>${hl(l)}</span>`).join('\n');
+  }else{
+    const par=state.lineage[state.viewIdx-1];
+    code.innerHTML=diffLines(par.code,cur.code).map(([t,l])=>{
+      const g=t==='add'?'+':t==='del'?'-':' ';return `<span class="dl ${t}"><span class="g">${g}</span>${hl(l)}</span>`;}).join('\n');
+  }}
+function showStep(idx){state.viewIdx=idx;const cur=state.lineage[idx];const par=state.lineage[idx-1];
+  document.querySelectorAll('.node').forEach((n,k)=>n.classList.toggle('on',k===idx));
+  $('#diffTitle').textContent=`round ${cur.round} · ${cur.desc}`;
+  const bn=$('#diffBanner');
+  if(idx>0){bn.style.display='flex';$('#dFrom').textContent=par.sp.toFixed(1)+'×';$('#dTo').textContent=cur.sp.toFixed(1)+'×';
+    $('#dGain').textContent='▲ +'+(cur.sp-par.sp).toFixed(1)+'×';$('#dWhy').innerHTML=cur.why;}
+  else{bn.style.display='none';}
+  renderCode();}
+function renderLineage(){const L=$('#lineage');L.innerHTML='';const maxSp=Math.max(2,...state.lineage.map(x=>x.sp));
+  state.lineage.forEach((c,k)=>{if(k)L.appendChild(Object.assign(document.createElement('div'),{className:'conn-line',textContent:'→'}));
+    const node=document.createElement('div');node.className='node'+(k===state.viewIdx?' on':'');
+    node.innerHTML=`<div class="sp">${c.sp.toFixed(1)}×</div><div class="bar" style="height:${14+96*c.sp/maxSp}px"></div><div class="rnd">R${c.round}</div><div class="desc">${c.desc}</div>`;
+    node.onclick=()=>showStep(k);L.appendChild(node);});}
+
+/* ---- journal ---- */
+function addJournal(r){const tb=$('#journal');const tr=document.createElement('tr');tr.className='flash';
+  const sc=r.status==='keep'?'var(--pass)':r.status==='crash'?'var(--crash)':'var(--fail)';
+  tr.innerHTML=`<td>${String(r.id).padStart(4,'0')}</td><td class="sp" style="color:${sc}">${r.speedup.toFixed(2)}×</td>
+   <td><span class="pill ${r.status}">${r.status}</span></td>
+   <td class="desc">${r.reward_hack?'<span class="rh">'+r.description+'</span><span class="badge-hack">reward-hack caught</span>':r.description}</td>`;
+  tb.prepend(tr);while(tb.children.length>120)tb.removeChild(tb.lastChild);}
+
+/* ---- THE single entry point (live ws OR simulator) ---- */
+function applyEvent(e){
+  switch(e.type){
+    case 'round_start':
+      state.round=e.round;state.target=e.target||state.target;buildGrid();resetFunnel();state.announced=new Set();
+      $('#swarmSub').textContent=`round ${e.round} — spawning ${e.n_cells||N} containers`;$('#sRound').textContent=e.round;
+      narrate(`Round ${e.round} — spawning ${e.n_cells||N} containers across the swarm`,'round');break;
+    case 'cell_update':
+      setCell(e.cell,e.status,0);live();
+      if(!state.announced.has(e.status)){state.announced.add(e.status);
+        if(e.status==='compiling')narrate('compiling candidates — maturin build --release','stage');
+        if(e.status==='testing')narrate('fuzz-verifying — 300 random inputs per port vs the Python oracle','stage');
+        if(e.status==='benchmarking')narrate('benchmarking survivors — median of many runs vs Python','stage');}
+      break;
+    case 'cell_result':
+      state.attempts++;$('#sAtt').textContent=state.attempts;
+      const f=state.funnel;
+      if(e.status==='crashed'){f.crash++;setCell(e.cell,'crashed');
+        if(f.crash<=3)narrate(`c-${String(e.cell).padStart(2,'0')} compile error — ${e.description||'rejected'}`,'crash');}
+      else if(e.reward_hack){f.comp++;f.hack++;setCell(e.cell,'failed');
+        narrate(`c-${String(e.cell).padStart(2,'0')} REJECTED — hardcoded outputs caught by differential fuzz (fitness → 0)`,'hack');}
+      else if(e.passed){f.comp++;f.ver++;setCell(e.cell,'passed',e.speedup);
+        if(e.speedup>state.best){f.fast++;narrate(`c-${String(e.cell).padStart(2,'0')} correct + ${e.speedup.toFixed(1)}× — beats the champion`,'pass');}}
+      live();renderFunnel();break;
+    case 'champion':{
+      state.best=e.speedup;$('#hBest').textContent=e.speedup.toFixed(1)+'×';
+      if(e.cell!=null&&e.cell!==undefined)setCell(e.cell,'champion',e.speedup);
+      const step={round:e.round,sp:e.speedup,desc:e.description||'improvement',why:e.why||'',code:e.code||state.prevCode};
+      state.lineage.push(step);state.prevCode=step.code;state.funnel.champ=1;renderFunnel();
+      renderLineage();showStep(state.lineage.length-1);
+      if(e.round>0)narrate(`NEW CHAMPION c-${e.cell!=null?String(e.cell).padStart(2,'0'):'--'} — ${(state.lineage.length>1?state.lineage[state.lineage.length-2].sp.toFixed(1):'1.0')}× → ${e.speedup.toFixed(1)}× — ${e.description}`,'champ');
+      break;}
+    case 'journal':addJournal({id:e.id||++state.jid,speedup:e.speedup,status:e.status,description:e.description,reward_hack:e.reward_hack});break;
+    case 'round_end':{const f=state.funnel;
+      $('#swarmSub').textContent=`round ${e.round} — ${e.kept?'NEW CHAMPION ':'no improvement '}· best ${e.best_speedup.toFixed(2)}×`;
+      narrate(`Round ${e.round} done — ${f.comp} compiled · ${f.ver} passed fuzz · ${f.hack} reward-hacks caught · best ${e.best_speedup.toFixed(2)}× (${e.kept?'kept':'discarded'})`,'end');break;}
+  }
+}
+
+/* ============================ SIMULATOR ============================ */
+const MODELS=['gpt-4o','claude-sonnet','gemini-2.5','o3-mini','gpt-4o-mini'];
+const CRASHES=['borrow checker E0502','f32/f64 mismatch at .dot()','cannot move out of borrowed','unresolved import ndarray::Zip',"lifetime 'py escapes"];
+let simT=null,running=false;
+const sleep=ms=>new Promise(r=>simT=setTimeout(r,ms));
+function stopSim(){running=false;if(simT)clearTimeout(simT);}
+async function runSim(){
+  stopSim();running=true;
+  const seq=SEQ[state.target]; const T={whisper_mel:'target: whisper_mel · matmul→log-mel',mandelbrot:'target: mandelbrot · escape-time loop'}[state.target];
+  state.round=0;state.best=1.0;state.attempts=0;state.lineage=[];state.prevCode='';state.jid=0;
+  $('#journal').innerHTML='';$('#feed').innerHTML='';$('#sAtt').textContent=0;$('#hBest').textContent='1.0×';$('#targetTag').textContent=state.label||T;
+  buildGrid();resetFunnel();
+  applyEvent({type:'journal',id:++state.jid,speedup:1.0,status:'keep',description:'seed naive port (baseline)'});
+  applyEvent({type:'champion',round:0,speedup:seq[0].sp,code:seq[0].code,description:seq[0].desc,why:seq[0].why,cell:null});
+  for(let r=1;running&&r<seq.length;r++){
+    applyEvent({type:'round_start',round:r,target:state.target,n_cells:N});
+    await sleep(250);
+    const peak=seq[r].sp, winner=Math.floor(Math.random()*N), hack=Math.random()<0.75?Math.floor(Math.random()*N):-1;
+    let bestSp=0,bestCell=-1;
+    for(const i of [...Array(N).keys()].sort(()=>Math.random()-0.5)){if(!running)break;setCell(i,'spawning');live();if(Math.random()<0.06)await sleep(16);}
+    await sleep(300);
+    await Promise.all([...Array(N).keys()].map(i=>(async()=>{
+      await new Promise(r2=>setTimeout(r2,Math.random()*1300));if(!running)return;
+      applyEvent({type:'cell_update',round:r,cell:i,status:'compiling'});await new Promise(r2=>setTimeout(r2,480+Math.random()*620));if(!running)return;
+      if(Math.random()<(r<=2?0.32:0.16)){applyEvent({type:'cell_result',round:r,cell:i,passed:false,status:'crashed',speedup:0,description:CRASHES[i%CRASHES.length]});
+        applyEvent({type:'journal',id:++state.jid,speedup:0,status:'crash',description:CRASHES[i%CRASHES.length]});return;}
+      applyEvent({type:'cell_update',round:r,cell:i,status:'testing'});await new Promise(r2=>setTimeout(r2,460+Math.random()*560));if(!running)return;
+      if(i===hack){const msg='hardcoded outputs — passed unit tests, FAILED fuzz';
+        applyEvent({type:'cell_result',round:r,cell:i,passed:false,status:'failed',speedup:0,reward_hack:true,description:msg});
+        applyEvent({type:'journal',id:++state.jid,speedup:0,status:'discard',reward_hack:true,description:msg});return;}
+      applyEvent({type:'cell_update',round:r,cell:i,status:'benchmarking'});await new Promise(r2=>setTimeout(r2,380+Math.random()*480));if(!running)return;
+      const sp=i===winner?peak*(0.97+Math.random()*0.04):Math.max(state.target==='mandelbrot'?2:0.6,state.best*(0.45+Math.random()*0.8));
+      const faster=sp>state.best;
+      applyEvent({type:'cell_result',round:r,cell:i,passed:true,speedup:sp,status:'passed',description:seq[r].desc});
+      if(faster||Math.random()<0.10)applyEvent({type:'journal',id:++state.jid,speedup:sp,status:faster?'keep':'discard',description:faster?seq[r].desc:'slower variant'});
+      if(sp>bestSp){bestSp=sp;bestCell=i;}
+    })()));
+    if(!running)break;
+    const kept=bestSp>state.best;
+    if(kept)applyEvent({type:'champion',round:r,speedup:seq[r].sp,code:seq[r].code,description:seq[r].desc,why:seq[r].why,cell:bestCell});
+    applyEvent({type:'round_end',round:r,best_speedup:Math.max(bestSp,state.best),kept});
+    await sleep(950);
+  }
+  if(running)narrate(`Done — ${state.best.toFixed(1)}× after ${state.round} rounds, ${state.attempts} attempts`,'end');
+  running=false;
+}
+
+/* ---- connection ---- */
+function setConn(m){$('#connDot').className='dot '+(m==='live'?'liveok':'sim');$('#connTxt').textContent=m==='live'?'live · ws':'simulated';}
+function connect(){if(location.protocol==='file:'){setConn('sim');return;}
+  try{const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');let op=false;
+    ws.onopen=()=>{op=true;setConn('live');stopSim();};
+    ws.onmessage=ev=>{try{applyEvent(JSON.parse(ev.data));}catch(_){}};
+    ws.onclose=()=>{if(!op)setConn('sim');};ws.onerror=()=>{if(!op)setConn('sim');};
+  }catch(_){setConn('sim');}}
+
+/* ---- wire up ---- */
+$('#segDiff').onclick=()=>{viewMode='diff';$('#segDiff').classList.add('on');$('#segFull').classList.remove('on');renderCode();};
+$('#segFull').onclick=()=>{viewMode='full';$('#segFull').classList.add('on');$('#segDiff').classList.remove('on');renderCode();};
+$('#runBtn').onclick=()=>{setConn('sim');runSim();};
+$('#targetSel').onchange=e=>{state.target=e.target.value;};
+/* ===== Swarm A: paste a GitHub repo -> ranked functions (fake data) ===== */
+const waitMs=ms=>new Promise(r=>setTimeout(r,ms));
+function show(v){ $('#landing').style.display=v==='landing'?'flex':'none';
+  $('#analysis').style.display=v==='analysis'?'flex':'none';
+  $('#app').style.display=v==='app'?'grid':'none'; }
+function parseRepo(u){ const m=(u||'').match(/github\.com[/:]([^/\s]+)\/([^/\s#?]+)/i);
+  if(m) return {owner:m[1], repo:m[2].replace(/\.git$/,'')};
+  const p=(u||'').split('/').filter(Boolean);
+  return {owner:p[p.length-2]||'local', repo:(p[p.length-1]||'repo').replace(/\.git$/,'')}; }
+function cand(file,fn,sig,score,est,target){ return {file,fn,sig,score,est,target}; }
+function buildCandidates(owner,repo){ const key=(owner+'/'+repo).toLowerCase();
+  if(key.includes('whisper')||key.includes('speech')||key.includes('audio')) return [
+    cand('whisper/audio.py','log_mel_spectrogram',{pure:1,numeric:1,hot:1,deps:1,oracle:1},96,'6–8×','whisper_mel'),
+    cand('whisper/timing.py','median_filter',{numeric:1,hot:1,oracle:1},72,'3–4×','whisper_mel'),
+    cand('whisper/audio.py','mel_filters',{numeric:1,deps:1,oracle:1},58,'~2×','whisper_mel'),
+    cand('whisper/decoding.py','_get_initial_tokens',{},24,'~1.1×','whisper_mel') ];
+  if(key.includes('mandel')||key.includes('fractal')||key.includes('raytrac')||key.includes('render')) return [
+    cand('src/mandelbrot.py','mandelbrot',{pure:1,numeric:1,hot:1,deps:1,oracle:1},98,'50–90×','mandelbrot'),
+    cand('src/render.py','escape_time',{pure:1,hot:1,oracle:1},86,'40×','mandelbrot'),
+    cand('src/palette.py','colorize',{numeric:1,oracle:1},47,'~2×','mandelbrot'),
+    cand('src/io.py','write_ppm',{},19,'~1×','mandelbrot') ];
+  return [
+    cand('core/transform.py','project_matrix',{pure:1,numeric:1,hot:1,deps:1,oracle:1},93,'5–7×','whisper_mel'),
+    cand('core/kernels.py','convolve2d',{pure:1,numeric:1,hot:1,oracle:1},90,'8–12×','mandelbrot'),
+    cand('utils/stats.py','rolling_mean',{numeric:1,hot:1,oracle:1},64,'~3×','whisper_mel'),
+    cand('io/loader.py','parse_records',{deps:1},21,'~1.1×','whisper_mel') ];
+}
+function addScan(t){ const d=document.createElement('div'); d.textContent=t; $('#anScan').appendChild(d); $('#anScan').scrollTop=1e6; }
+async function startAnalysis(url){ const {owner,repo}=parseRepo(url); state.repo={owner,repo};
+  $('#anRepo').textContent=owner+'/'+repo; show('analysis');
+  $('#anScan').innerHTML=''; $('#anList').style.display='none';
+  const nfn=800+Math.floor(Math.random()*900);
+  const steps=[`$ git clone https://github.com/${owner}/${repo}  …  done (shallow, 1 commit)`,
+    `parsing ${nfn} functions across the repository (AST)…`,
+    `scoring optimization potential on the swarm — pure · numeric/array · hot-loops · min-deps · deterministic oracle…`,
+    `ranked ${nfn} candidates by expected speedup.`];
+  for(const s of steps){ await waitMs(480); addScan(s); }
+  await waitMs(350);
+  const list=buildCandidates(owner,repo); $('#anCount').textContent=`(top ${list.length} of ${nfn})`;
+  renderCandidates(list); $('#anList').style.display='block';
+}
+function renderCandidates(list){ const SIGS=[['pure','pure'],['numeric','numeric'],['hot','hot-loop'],['deps','min-deps'],['oracle','oracle']];
+  $('#anList').querySelector('tbody').innerHTML=list.map((c,i)=>`<tr class="${i===0?'top':''}">
+    <td><div class="fnname">${c.fn}()</div><div class="fnfile">${c.file}</div></td>
+    <td><div class="sigs">${SIGS.map(([k,l])=>`<span class="sig ${c.sig[k]?'on':''}">${l}</span>`).join('')}</div></td>
+    <td><span class="scorebar"><i style="width:${c.score}%"></i></span> <span class="fnname">${c.score}</span></td>
+    <td style="font-family:var(--mono);color:var(--pass)">${c.est}</td>
+    <td style="text-align:right"><button class="forge" data-i="${i}">Forge →</button></td></tr>`).join('');
+  $('#anList').querySelectorAll('.forge').forEach(b=>b.onclick=()=>pickCandidate(list[+b.dataset.i]));
+}
+function pickCandidate(c){ state.target=c.target;
+  state.label=`${state.repo.owner}/${state.repo.repo} · ${c.fn}()`;
+  $('#targetTag').textContent=state.label;
+  const sel=$('#targetSel'); if(sel) sel.value=c.target;
+  show('app'); runSim(); }
+
+/* wiring */
+$('#analyzeBtn').onclick=()=>startAnalysis($('#repoUrl').value);
+$('#repoUrl').addEventListener('keydown',e=>{ if(e.key==='Enter') startAnalysis(e.target.value); });
+document.querySelectorAll('#landing .chip').forEach(b=>b.onclick=()=>{ $('#repoUrl').value=b.dataset.url; startAnalysis(b.dataset.url); });
+$('#backBtn').onclick=()=>show('landing');
+$('#newRepoBtn').onclick=()=>{ stopSim(); show('landing'); };
+buildGrid(); resetFunnel(); connect(); show('landing');
+</script>
+</body>
+</html>
