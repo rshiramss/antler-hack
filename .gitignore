@@ -1,0 +1,26 @@
+# Local documentation snapshots
+/Py03_docs/
+/cargo_docs/
+/fastapi_docs/
+/github/
+/hypothesis_docs/
+/litellm_docs/
+/maturin_docs/
+/modal_docs/
+/numpy_docs/
+/pytest_benchmark_docs/
+/pytest_docs/
+/raindrop_docs/
+/rayon_docs/
+/rust_lang_docs/
+
+# Project planning docs
+/RustForge_Project_Breakdown.md
+/build.md
+
+# Local/editor noise
+.DS_Store
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
