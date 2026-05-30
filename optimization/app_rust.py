@@ -40,6 +40,9 @@ rust_image = (
     .add_local_dir("optimization/rust_solve", "/root/proj", copy=True)   # pre-baked cargo project
     # warm the cargo cache: compile pyo3+numpy once into the image (workers reuse it)
     .run_commands("cd /root/proj && maturin build --release --out /root/proj/dist --interpreter python3")
+    # the shared, artifact-agnostic metric (held-out gate + multi-size regression + mem + stability).
+    # Added last so the expensive layers above stay cached when only this file changes.
+    .add_local_file("optimization/evaluate.py", "/root/evaluate.py", copy=True)
 )
 
 secret = modal.Secret.from_dotenv()
@@ -114,39 +117,32 @@ def _load_spec() -> TargetSpec:
 
 
 # Runs in a FRESH subprocess per attempt (mirrors the local _validate.py design): loads the
-# just-built .so directly by path, runs the differential gate + benchmark, prints one JSON line.
-# A new interpreter avoids two failure modes seen on Modal: (a) pip-installing the wheel was
-# silently ineffective; (b) re-importing a C-extension in a warm container returns stale code.
+# just-built .so by path, then scores it with the SHARED evaluate() metric — the held-out
+# differential gate (gate 1) plus the multi-size regression sweep, memory, stability, and the
+# gated geomean. A new interpreter avoids two failure modes seen on Modal: (a) pip-installing
+# the wheel was silently ineffective; (b) re-importing a C-extension in a warm container
+# returns stale code.
 _EVAL_SCRIPT = r'''
-import os, sys, json, glob, time, importlib.util
+import os, sys, json, glob, importlib.util
 import numpy as np
 sys.path.insert(0, "/root")
 from target_spec import TargetSpec
+import evaluate as E
 spec = TargetSpec.from_json(os.environ["RF_SPEC"])
 ref = spec.load_oracle()
 libs = (glob.glob("/root/proj/target/release/lib%s.so" % spec.module_name)
         + glob.glob("/root/proj/target/release/lib%s.dylib" % spec.module_name))
 if not libs:
     print(json.dumps({"passed": False, "speedup": 0.0,
-        "error": "no built lib: " + str(os.listdir("/root/proj/target/release"))[:300]})); sys.exit(0)
+        "error": "no built lib: " + str(os.listdir("/root/proj/target/release"))[:300],
+        "verdict": "build produced no library"})); sys.exit(0)
 loader = importlib.util.spec_from_file_location(spec.module_name, libs[0])
 mod = importlib.util.module_from_spec(loader); loader.loader.exec_module(mod)
 fn = getattr(mod, spec.fn_name)
-rng = np.random.default_rng(12345)
-for xi in spec.make_gate_inputs(rng, 20):
-    try:
-        got = np.asarray(fn(xi))
-    except Exception as e:
-        print(json.dumps({"passed": False, "speedup": 0.0, "error": repr(e)})); sys.exit(0)
-    if not np.allclose(got, np.asarray(ref(xi)), rtol=spec.rtol, atol=spec.atol):
-        print(json.dumps({"passed": False, "speedup": 0.0, "error": "differential mismatch"})); sys.exit(0)
-x = spec.make_bench_input()
-def med(f):
-    f(x); ts = []
-    for _ in range(5):
-        t = time.perf_counter(); f(x); ts.append(time.perf_counter() - t)
-    return sorted(ts)[2]
-print(json.dumps({"passed": True, "speedup": med(ref) / med(fn), "error": ""}))
+# Reuse the frozen, artifact-agnostic metric: oracle = the spec's reference; inputs are
+# harness-generated inside evaluate() with a seed unseen by the mutation model.
+res = E.evaluate(fn, reference=ref, sample_input=np.ones(8, dtype=np.float64))
+print(json.dumps(res, default=float))
 '''
 
 

@@ -18,7 +18,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from target import reference as _DEFAULT_REFERENCE, make_inputs
+# NOTE: `target` is imported lazily inside evaluate() only when no reference/sample is
+# supplied (the Python-loop path). This keeps evaluate.py importable as a standalone,
+# artifact-agnostic metric — e.g. the Rust swarm reuses it with reference=spec.oracle
+# and its own sample, with target.py absent from the container.
 
 
 # ── Config (named constants; all env-overridable) ────────────────────────────────
@@ -145,17 +148,23 @@ def _geomean(values) -> float:
 
 
 # ── The metric ────────────────────────────────────────────────────────────────────
-def evaluate(candidate_fn, reference=_DEFAULT_REFERENCE, sample_input=None) -> dict:
+def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
     """Score one candidate against the frozen oracle across a size sweep, gated.
 
-    Returns a dict with the ratchet's compared number `speedup` (the gated geomean,
-    0.0 if ineligible) plus a full research record: per-size speedups, geomean,
-    mem_ratio, max_abs_error, stable, and a human-readable verdict.
+    `reference` is the correctness oracle (defaults to the project `target.reference`
+    for the Python loop; the Rust swarm passes the spec's oracle). `sample_input` is a
+    representative argument tuple used only to infer the schema. Returns a dict with the
+    ratchet's compared number `speedup` (the gated geomean, 0.0 if ineligible) plus a
+    full research record: per-size speedups, geomean, mem_ratio, max_abs_error, stable,
+    and a human-readable verdict.
     """
     rng = np.random.default_rng(_GEN_SEED)  # unseen by the mutation model
 
-    # Representative sample → schema (drives all subsequent generation).
+    # Defaults come from target.py — imported lazily so this module stays standalone.
+    if reference is None:
+        from target import reference as reference  # noqa: PLW0127
     if sample_input is None:
+        from target import make_inputs
         sample_input = make_inputs(SIZES[0])
     sample_inputs = sample_input if isinstance(sample_input, tuple) else (sample_input,)
     schema = infer_schema(reference, sample_inputs)

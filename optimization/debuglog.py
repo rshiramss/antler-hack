@@ -52,6 +52,14 @@ def log_attempt(round_n: int, idx: int, champion_src: str, result: dict, *,
         "temperature": temperature,
         "passed": result.get("passed"),
         "speedup": round(result.get("speedup", 0.0), 4),
+        # research record (Stage 1 metric): per-size sweep, memory, stability, verdict
+        "geomean_speedup": round(result.get("geomean_speedup", 0.0), 4),
+        "speedup_by_size": {str(k): round(float(v), 4)
+                            for k, v in (result.get("speedup_by_size") or {}).items()},
+        "mem_ratio": round(result.get("mem_ratio", 0.0), 4),
+        "max_abs_error": result.get("max_abs_error"),
+        "stable": result.get("stable"),
+        "verdict": result.get("verdict", ""),
         "error": result.get("error", ""),
         "diff": d,
         "src": result.get("src", ""),
@@ -59,9 +67,14 @@ def log_attempt(round_n: int, idx: int, champion_src: str, result: dict, *,
     with open(path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
-    verdict = ("PASS %.1fx" % record["speedup"]) if record["passed"] \
-        else f"FAIL ({record['error'] or 'no output'})"
-    print(f"  [r{round_n} #{idx}] {model} temp={temperature:.2f} -> {verdict}")
+    v = record["verdict"]
+    if not record["passed"]:                      # correctness failure / crash
+        msg = f"FAIL ({v or record['error'] or 'no output'})"
+    elif record["speedup"] > 0:                   # passed all gates → eligible
+        msg = f"PASS {record['speedup']:.2f}x" + (f"  [{v}]" if v else "")
+    else:                                         # correct but gated out (regression/mem/unstable)
+        msg = f"GATED ({v or 'ineligible'})"
+    print(f"  [r{round_n} #{idx}] {model} temp={temperature:.2f} -> {msg}")
     if show_diff:
         _print_diff(d)
     return record
