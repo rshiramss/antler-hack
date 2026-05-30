@@ -105,7 +105,7 @@
   .code .kw{color:#7aa2ff}.code .ty{color:#5ad6c0}.code .mac{color:#e6a35a}.code .fn{color:#f0c674}.code .num{color:#d19a66}.code .cm{color:#5a6678;font-style:italic}.code .str{color:#9ece6a}
 
   /* lineage ratchet */
-  .lineage{display:flex;align-items:flex-end;gap:0;padding:14px 14px 12px;overflow-x:auto}
+  .lineage{display:flex;align-items:flex-end;gap:0;padding:14px 14px 12px;overflow-x:auto;flex:1;min-height:0;box-shadow:inset 0 -1px 0 var(--line)}
   .node{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;min-width:96px;position:relative}
   .node .bar{width:34px;background:linear-gradient(180deg,#2a3450,#1a2236);border:1px solid #2c3a55;border-radius:5px 5px 0 0;transition:height .4s}
   .node.on .bar{background:linear-gradient(180deg,#fbbf24,#b07e10);border-color:#fbbf24}
@@ -543,6 +543,64 @@
   .fstep .sub{display:none}
   .funnel{padding:8px 16px}
   #board{grid-auto-rows:70px}
+
+  /* ============================================================
+     DARK MODE — flip all surfaces/text/borders to dark; KEEP the
+     colorful accents (amber accent, blue/violet/cyan/green/red swarm,
+     green/red diff). Overrides the hardcoded light values above.
+     ============================================================ */
+  :root{
+    --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --raised:#0d1422;
+    --line:#1d2535; --line2:#2c3a55;
+    --ink:#e7ecf5; --txt:#cdd6e6; --dim:#8a97ad; --faint:#5a6678;
+    --gold:#fbbf24; --gold-hi:#fbbf24; --gold-deep:#b07e10; --champ:#fbbf24;
+    --queued:#2a3242; --spawn:#3b82f6; --compile:#f59e0b; --test:#a855f7; --bench:#06b6d4;
+    --pass:#22c55e; --fail:#ef4444; --crash:#b45309;
+    --add:#13351f; --addln:#3ddc84; --del:#3a1416; --delln:#ff8a8a;
+  }
+  body{color:var(--txt)} b{color:var(--ink)}
+  .screen{background:radial-gradient(900px 460px at 50% -4%,rgba(245,158,11,.06),transparent 62%),var(--bg)}
+  #landing,#analysis{background:transparent}
+  header{background:linear-gradient(180deg,#10151d,var(--bg))}
+  .logo{color:var(--ink)} .tag{background:var(--panel);color:var(--dim)}
+  .stat .v{color:var(--ink)} .stat .v.gold{color:var(--champ)} .stat .v.live{color:var(--bench)}
+  .hero{color:var(--dim)} .conn{color:var(--dim)}
+  select,button{background:var(--raised);color:var(--ink);border-color:var(--line)}
+  .ghost{background:transparent;color:var(--dim)}
+  .hd button,.win-h{color:var(--dim)}
+  button.run:hover,.cands .forge:hover{background:var(--gold-deep);color:#1a1304}
+  .funnel{background:var(--panel2)} .fstep .arrow{color:var(--line2)}
+  .fstep .n{color:var(--ink)} .fstep .lab,.fstep .lab b{color:var(--dim)}
+  .fstep.gen .n{color:var(--dim)} .fstep.comp .n{color:var(--compile)} .fstep.ver .n{color:var(--test)} .fstep.fast .n{color:var(--pass)} .fstep.champ .n{color:var(--champ)}
+  .card{background:var(--panel);box-shadow:none}
+  .hd{background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)} .hd h2{color:var(--dim)} .hd .sub{color:var(--faint)}
+  .cell{color:var(--txt)} .cell .id{color:var(--dim);opacity:.7}
+  .cell.crashed{background:var(--crash);color:#1c1200} .cell.crashed .id{color:#1c1200}
+  .legend{color:var(--dim)}
+  .feed{color:var(--txt)} .line{border-bottom:1px solid var(--line)} .line .ic{color:var(--faint)} .line .tx{color:var(--txt)} .line .rd{color:var(--faint)}
+  .line.champ{background:rgba(245,158,11,.10)} .line.champ .tx,.line.champ .ic{color:var(--gold)}
+  .line.crash .tx{color:var(--compile)} .line.crash .ic{color:var(--crash)} .line.pass .tx,.line.pass .ic{color:var(--pass)}
+  .line.stage .tx{color:var(--dim)} .line.round .tx{color:var(--ink)} .line.end{background:rgba(255,255,255,.03)} .line.end .tx{color:var(--dim)}
+  .diffbanner{background:linear-gradient(90deg,rgba(245,158,11,.08),transparent);border-left:2px solid var(--champ)}
+  .delta .from{color:var(--faint)} .delta .to{color:var(--champ)} .delta .gain{color:var(--pass)} .why{color:var(--dim)} .why b{color:var(--ink)}
+  .seg button{background:transparent;color:var(--dim)} .seg button.on{background:var(--raised);color:var(--ink)}
+  pre.code{color:var(--txt)} .dl .g{color:#5a6a82} .dl.del{color:var(--delln)}
+  .code .kw{color:#7aa2ff} .code .ty{color:#5ad6c0} .code .mac{color:#e6a35a} .code .fn{color:#f0c674} .code .num{color:#d19a66} .code .cm{color:#5a6678} .code .str{color:#9ece6a}
+  .node .bar{background:#2A3445;border:1px solid var(--line2)} .conn-line{color:var(--line2)}
+  thead th{background:var(--panel2);color:var(--faint)} tbody td{border-bottom:1px solid var(--line);color:var(--txt)}
+  .pill.keep{background:#0c3a20;color:#5ee08a} .pill.discard{background:#3a1414;color:#ff9a9a} .pill.crash{background:#3a2a0c;color:#f0c074}
+  @keyframes rowflash{from{background:rgba(245,158,11,.12)}to{background:transparent}}
+  .badge-hack{color:#FCA5A5;border:1px solid #5a2030}
+  .land-input input{background:var(--panel);color:var(--ink);border-color:var(--line)}
+  .land-input input:focus{border-color:var(--champ);box-shadow:0 0 0 3px rgba(245,158,11,.18)}
+  .chip{background:var(--panel);color:var(--dim)}
+  .an-scan{background:#0E141C;color:var(--dim)}
+  .an-title{color:var(--dim)} .an-title span{color:var(--gold)}
+  table.cands td{border-bottom:1px solid var(--line)} table.cands tr.top{background:rgba(245,158,11,.06)} table.cands tbody tr:hover{background:rgba(255,255,255,.03)}
+  .sig{border:1px solid var(--line);color:var(--dim);background:rgba(255,255,255,.025)} .sig.on{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4);color:#86EFAC}
+  .scorebar{background:#1B2230}
+  .fnname{color:var(--ink)} .fnfile{color:var(--dim)}
+  ::-webkit-scrollbar-thumb{background:#2A3445}
 </style>
 </head>
 <body>
@@ -550,7 +608,7 @@
 <section id="landing" class="screen">
   <div class="land-card">
     <div class="logo big">RUST<b>FORGE</b></div>
-    <div class="land-sub">Point it at a GitHub repo. A 50-wide Modal swarm finds its hottest Python function and rewrites it as <b style="color:#B45309">verified-faster Rust</b> — provably equivalent, measurably faster.</div>
+    <div class="land-sub">Point it at a GitHub repo. A 50-wide Modal swarm finds its hottest Python function and rewrites it as <b style="color:#cdd6e6">verified-faster Rust</b> — provably equivalent, measurably faster.</div>
     <div class="land-input">
       <input id="repoUrl" type="text" spellcheck="false" placeholder="https://github.com/owner/repo" value="https://github.com/karpathy/micrograd" />
       <button id="analyzeBtn" class="run">Analyze repo →</button>
@@ -998,7 +1056,7 @@ function showStep(idx){state.viewIdx=idx;const cur=state.lineage[idx];const par=
 function renderLineage(){const L=$('#lineage');L.innerHTML='';const maxSp=Math.max(2,...state.lineage.map(x=>x.sp));
   state.lineage.forEach((c,k)=>{if(k)L.appendChild(Object.assign(document.createElement('div'),{className:'conn-line',textContent:'→'}));
     const node=document.createElement('div');node.className='node'+(k===state.viewIdx?' on':'');
-    node.innerHTML=`<div class="sp">${c.sp.toFixed(1)}×</div><div class="bar" style="height:${14+96*c.sp/maxSp}px"></div><div class="rnd">R${c.round}</div><div class="desc">${c.desc}</div>`;
+    node.innerHTML=`<div class="sp">${c.sp.toFixed(1)}×</div><div class="bar" style="height:${34+78*c.sp/maxSp}px"></div><div class="rnd">R${c.round}</div><div class="desc">${c.desc}</div>`;
     node.onclick=()=>showStep(k);L.appendChild(node);});}
 
 /* ---- journal ---- */
@@ -1186,7 +1244,7 @@ function initTiling(){
   if(main&&main.parentNode){ main.parentNode.insertBefore(board,main); main.style.display='none'; } else { app.appendChild(board); }
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   /* tidy default layout, keyed by panel identity (order: swarm, narration, diff, lineage, journal) */
-  const DEFAULTS=[[3,5],[3,4],[3,6],[3,3],[6,4]];
+  const DEFAULTS=[[3,7],[3,4],[3,6],[3,3],[6,4]];
   const MINC=2,MAXC=6,MINR=2,MAXR=8, ROWUNIT=92;
   function gapPx(){ const g=parseFloat(getComputedStyle(board).gap)||12; return g; }
   function padPx(){ return parseFloat(getComputedStyle(board).paddingLeft)||12; }
