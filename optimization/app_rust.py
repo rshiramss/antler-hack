@@ -1,12 +1,23 @@
 # app_rust.py — the Rust swarm: each worker has the LLM write lib.rs, compiles it with
 # maturin in-container, and scores it (differential gate + benchmark) vs the Python reference.
 #
-#   uv run modal run optimization/app_rust.py::evolve_rust          # full run
+# The target is described by a TargetSpec, so the same swarm ports any function:
+#   uv run modal run optimization/app_rust.py::evolve_rust          # default toy target
+#   RUSTFORGE_SWARM_A=candidates.json uv run modal run optimization/app_rust.py::evolve_rust
+#       # port the top function Swarm A (analyze.py) selected
 #   N_PER_ROUND=1 MAX_ROUNDS=1 uv run modal run optimization/app_rust.py::evolve_rust   # 1-container de-risk
 import os
+import sys
 
 import modal
 
+# target_spec.py lives at the repo root; append it (not prepend) so the local `mutate`
+# import below still resolves to optimization/mutate.py.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+
+from target_spec import TargetSpec, SOLVE_RUST_SIGNATURE
 from mutate import SEED_RUST
 
 app = modal.App("rustforge-swarm")
@@ -23,7 +34,7 @@ rust_image = (
     .env({"PATH": "/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin", "CARGO_HOME": "/root/.cargo"})
     .run_commands("python -m ensurepip --upgrade")          # ensure `python -m pip` exists for wheel install
     .uv_pip_install("numpy", "litellm", "python-dotenv", "maturin")
-    .add_local_file("optimization/target.py", "/root/target.py", copy=True)
+    .add_local_file("target_spec.py", "/root/target_spec.py", copy=True)   # the shared target abstraction
     .add_local_file("optimization/mutate.py", "/root/mutate.py", copy=True)
     .add_local_file("optimization/program_rust.md", "/root/program_rust.md", copy=True)
     .add_local_dir("optimization/rust_solve", "/root/proj", copy=True)   # pre-baked cargo project
@@ -34,24 +45,77 @@ rust_image = (
 secret = modal.Secret.from_dotenv()
 
 
+# ── The default target: the x*x+1 toy (reproduces the original hardcoded behavior) ──
+_TOY_SOURCE = """\
+def reference(x):
+    out = np.empty_like(x)
+    for i in range(x.shape[0]):
+        out[i] = x[i] * x[i] + 1.0
+    return out
+"""
+
+
+def _toy_spec() -> TargetSpec:
+    return TargetSpec(
+        name="toy_square_plus_one",
+        description="Elementwise: out[i] = x[i] * x[i] + 1.0 over a 1-D f64 array.",
+        source=_TOY_SOURCE,
+        oracle_source=_TOY_SOURCE,
+        oracle_entry="reference",
+        module_name="rust_solve",          # must match the baked crate's [lib] name
+        fn_name="solve",
+        rust_signature=SOLVE_RUST_SIGNATURE,
+        seed_rust=SEED_RUST,
+        array_mode=True,
+        rtol=1e-9,
+        atol=1e-9,
+        bench_input_size=1_000_000,
+        fuzz_max_len=5000,
+    )
+
+
+def _load_spec() -> TargetSpec:
+    """Pick the target: a Swarm A candidate (RUSTFORGE_SWARM_A=candidates.json) or the toy."""
+    path = os.environ.get("RUSTFORGE_SWARM_A")
+    if path and os.path.exists(path):
+        import json
+
+        with open(path) as f:
+            data = json.load(f)
+        if isinstance(data, list):          # analyze.py can emit the full ranked list
+            data = data[0]
+        return TargetSpec.from_swarm_a(
+            data,
+            module_name="rust_solve",
+            fn_name="solve",
+            rust_signature=SOLVE_RUST_SIGNATURE,
+            array_mode=True,
+            rtol=1e-9,
+            atol=1e-9,
+        )
+    return _toy_spec()
+
+
 @app.function(image=rust_image, cpu=4, secrets=[secret], timeout=900)
-def try_one_rust(champion_src: str, history: str, temperature: float) -> dict:
+def try_one_rust(spec_json: str, champion_src: str, history: str, temperature: float) -> dict:
     """Swarm worker: LLM writes lib.rs -> maturin build -> import -> gate + benchmark."""
     import importlib
     import subprocess
-    import sys
     import time
 
     import numpy as np
 
     sys.path.insert(0, "/root")
     from mutate import propose_rust
-    from target import reference, make_inputs
+    from target_spec import TargetSpec as _TargetSpec
+
+    spec = _TargetSpec.from_json(spec_json)
+    reference = spec.load_oracle()
     meta = {"model": os.environ.get("OPT_MODEL", "gpt-5.5"), "temperature": temperature}
 
-    # 1) LLM rewrites the Rust, in-container
+    # 1) LLM rewrites the Rust, in-container (prompt is built from the spec)
     try:
-        src = propose_rust(champion_src, history, temperature)
+        src = propose_rust(champion_src, history, temperature, spec)
     except Exception as e:
         return {"passed": False, "speedup": 0.0, "error": "llm: " + repr(e), "src": "", **meta}
     open("/root/proj/src/lib.rs", "w").write(src)
@@ -74,22 +138,21 @@ def try_one_rust(champion_src: str, history: str, temperature: float) -> dict:
         capture_output=True, text=True,
     )
     importlib.invalidate_caches()
-    import rust_solve
-    fn = rust_solve.solve
+    mod = importlib.import_module(spec.module_name)
+    fn = getattr(mod, spec.fn_name)
 
     # 4) differential gate on unseen fuzz inputs (the anti-cheat moat)
     rng = np.random.default_rng(12345)
-    for _ in range(20):
-        xi = rng.standard_normal(rng.integers(1, 5000))
+    for xi in spec.make_gate_inputs(rng, n=20):
         try:
-            got = fn(xi)
+            got = np.asarray(fn(xi))
         except Exception as e:
             return {"passed": False, "speedup": 0.0, "error": repr(e), "src": src, **meta}
-        if not np.allclose(got, reference(xi), rtol=1e-9, atol=1e-9):
+        if not np.allclose(got, np.asarray(reference(xi)), rtol=spec.rtol, atol=spec.atol):
             return {"passed": False, "speedup": 0.0, "error": "differential mismatch", "src": src, **meta}
 
-    # 5) benchmark vs the reference
-    x = make_inputs()
+    # 5) benchmark vs the reference on the same input
+    x = spec.make_bench_input()
     def med(f):
         f(x)
         ts = []
@@ -106,11 +169,16 @@ MAX_ROUNDS  = int(os.environ.get("MAX_ROUNDS", "5"))
 @app.local_entrypoint()
 def evolve_rust():
     import debuglog
-    champion, best, history = SEED_RUST, 1.0, ""
+
+    spec = _load_spec()
+    spec_json = spec.to_json()
+    print(f"=== RustForge swarm target: {spec.name} ===")
+
+    champion, best, history = spec.seed(), 1.0, ""
     debuglog.reset()
     for round_n in range(1, MAX_ROUNDS + 1):
         champion_before = champion
-        args = [(champion, history, 0.4 + 0.5 * (i / N_PER_ROUND)) for i in range(N_PER_ROUND)]
+        args = [(spec_json, champion, history, 0.4 + 0.5 * (i / N_PER_ROUND)) for i in range(N_PER_ROUND)]
         results = [r for r in try_one_rust.starmap(args, return_exceptions=True) if isinstance(r, dict)]
 
         for idx, r in enumerate(results):

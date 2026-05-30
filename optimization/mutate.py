@@ -102,10 +102,39 @@ fn rust_solve(m: &Bound<'_, PyModule>) -> PyResult<()> {
 '''
 
 
-def propose_rust(champion_src: str, history: str, temperature: float = 0.7) -> str:
-    """Ask the LLM to rewrite lib.rs faster while staying correct. Returns Rust source."""
+def _fill_program_rust(spec) -> str:
+    """Fill the program_rust.md template from a TargetSpec.
+
+    Replaces the <<...>> sentinels (the file is full of Rust braces, so a sentinel
+    replace is used rather than str.format). Removes the old hardcoded x*x+1 / rust_solve
+    coupling — the reference, module/fn names, signature, and tolerances all come from
+    the spec.
+    """
     with open(_PROGRAM_RUST_PATH) as f:
-        program = f.read()
+        template = f.read()
+    ref_source = (spec.source or "").strip() or "(no source provided; follow the description)"
+    return (
+        template
+        .replace("<<REFERENCE_DESC>>", spec.description.strip())
+        .replace("<<REFERENCE_SOURCE>>", ref_source)
+        .replace("<<MODULE>>", spec.module_name)
+        .replace("<<FN>>", spec.fn_name)
+        .replace("<<SIGNATURE>>", spec.rust_signature)
+        .replace("<<RTOL>>", repr(spec.rtol))
+        .replace("<<ATOL>>", repr(spec.atol))
+    )
+
+
+def propose_rust(champion_src: str, history: str, temperature: float = 0.7, spec=None) -> str:
+    """Ask the LLM to rewrite lib.rs faster while staying correct. Returns Rust source.
+
+    The system prompt is built from `spec` (a TargetSpec) so the swarm can port any
+    target, not just the hardcoded x*x+1 toy. `spec` is required by the spec-driven
+    app_rust.py entrypoint.
+    """
+    if spec is None:
+        raise ValueError("propose_rust requires a TargetSpec (build one from the target / Swarm A)")
+    program = _fill_program_rust(spec)
     messages = [
         {"role": "system", "content": program},
         {"role": "user", "content": (

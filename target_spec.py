@@ -34,6 +34,14 @@ DEFAULT_RUST_SIGNATURE = (
     ") -> PyResult<Bound<'py, PyArray1<f64>>>"
 )
 
+# Signature used by the Modal Rust swarm (optimization/rust_solve crate): the exported
+# function is `solve`, returning a Bound array directly (matches the crate that the
+# swarm image warm-builds).
+SOLVE_RUST_SIGNATURE = (
+    "fn solve<'py>(py: Python<'py>, x: PyReadonlyArray1<'py, f64>) "
+    "-> Bound<'py, PyArray1<f64>>"
+)
+
 
 @dataclass
 class TargetSpec:
@@ -58,11 +66,22 @@ class TargetSpec:
 
     # Rust shell.
     module_name: str = DEFAULT_MODULE_NAME
+    fn_name: str = "run_rust"            # exported Python/Rust function name
     rust_signature: str = DEFAULT_RUST_SIGNATURE
+    seed_rust: Optional[str] = None      # explicit naive seed; generated if None
 
     # Differential-gate tolerances.
     rtol: float = 1e-5
     atol: float = 1e-6
+
+    # Input generation. Two modes:
+    #   array_mode=False → fixed-shape inputs (e.g. micrograd's (2,)); fuzz over
+    #     input_shape with elements in [input_low, input_high]; bench on fixed_input.
+    #   array_mode=True  → variable-length 1-D arrays (elementwise numeric ops, the
+    #     Swarm-A / toy profile); fuzz over random lengths; bench on a large array.
+    array_mode: bool = False
+    fuzz_max_len: int = 5000             # max length of a fuzz array in array_mode
+    bench_input_size: int = 1_000_000    # bench array length in array_mode
 
     # ── Oracle resolution ────────────────────────────────────────────────────
     def load_oracle(self) -> Callable:
@@ -82,7 +101,9 @@ class TargetSpec:
 
         if self.oracle_source:
             entry = self.oracle_entry or self.name
-            ns: dict = {}
+            import numpy as np
+
+            ns: dict = {"np": np, "numpy": np}  # common deps for self-ported numeric fns
             exec(self.oracle_source, ns)  # trusted locally; Modal sandboxes it in the swarm
             if entry not in ns:
                 raise ValueError(
@@ -105,6 +126,40 @@ class TargetSpec:
         n = int(np.prod(self.input_shape))
         mid = (self.input_low + self.input_high) / 2.0
         return [float(mid)] * n
+
+    def make_gate_inputs(self, rng, n: int = 20) -> list:
+        """Random inputs for the differential correctness gate.
+
+        These are generated at evaluation time and never shown to the LLM — the
+        anti-cheat moat. In array_mode they are variable-length 1-D arrays; otherwise
+        they match the fixed input_shape over [input_low, input_high].
+        """
+        if self.array_mode:
+            return [
+                rng.standard_normal(int(rng.integers(1, self.fuzz_max_len)))
+                for _ in range(n)
+            ]
+        return [
+            rng.uniform(self.input_low, self.input_high, size=self.input_shape).astype(
+                "float64"
+            )
+            for _ in range(n)
+        ]
+
+    def make_bench_input(self):
+        """The fixed benchmark input (identical for both Python and Rust sides)."""
+        import numpy as np
+
+        if self.array_mode:
+            rng = np.random.default_rng(0)
+            return rng.standard_normal(self.bench_input_size)
+        return np.array(self.default_fixed_input(), dtype=np.float64).reshape(
+            self.input_shape
+        )
+
+    def seed(self) -> str:
+        """The naive Rust seed (explicit `seed_rust`, or generated for this spec)."""
+        return self.seed_rust if self.seed_rust is not None else naive_seed(self)
 
     # ── Subprocess (JSON) boundary ─────────────────────────────────────────────
     def to_json(self) -> str:
@@ -170,16 +225,18 @@ class TargetSpec:
 def naive_seed(spec: TargetSpec) -> str:
     """Generate the known-correct naive Rust seed for `spec`.
 
-    The seed delegates `run_rust` straight back to the Python oracle through the GIL.
-    It always passes the correctness gate (it *is* the oracle) and benchmarks at ~1x,
-    giving the ratchet a correct floor to improve on. `set_oracle()` must be called
-    before `run_rust()`. The body matches the default 1-D float64 → 1-D float64
-    profile; only the #[pymodule] name is templated.
+    The seed delegates the exported function straight back to the Python oracle through
+    the GIL. It always passes the correctness gate (it *is* the oracle) and benchmarks
+    at ~1x, giving the ratchet a correct floor to improve on. `set_oracle()` must be
+    called before the function runs. The #[pymodule] name and exported function name are
+    templated from the spec (e.g. rustforge_port/run_rust locally, rust_solve/solve on
+    the Modal swarm).
     """
+    fn = spec.fn_name
     return f"""\
-// Naive seed: run_rust delegates to the Python oracle via the GIL.
+// Naive seed: {fn} delegates to the Python oracle via the GIL.
 // Proves the pipeline compiles and the correctness gate passes.
-// set_oracle() must be called before run_rust().
+// set_oracle() must be called before {fn}().
 use numpy::{{IntoPyArray, PyArray1, PyReadonlyArray1}};
 use pyo3::prelude::*;
 use std::sync::Mutex;
@@ -192,7 +249,7 @@ fn set_oracle(oracle: Py<PyAny>) {{
 }}
 
 #[pyfunction]
-fn run_rust<'py>(
+fn {fn}<'py>(
     py: Python<'py>,
     inputs: PyReadonlyArray1<f64>,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {{
@@ -215,7 +272,7 @@ fn run_rust<'py>(
 #[pymodule]
 fn {spec.module_name}(m: &Bound<'_, PyModule>) -> PyResult<()> {{
     m.add_function(wrap_pyfunction!(set_oracle, m)?)?;
-    m.add_function(wrap_pyfunction!(run_rust, m)?)?;
+    m.add_function(wrap_pyfunction!({fn}, m)?)?;
     Ok(())
 }}
 """
