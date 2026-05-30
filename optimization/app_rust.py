@@ -96,21 +96,54 @@ def _load_spec() -> TargetSpec:
     return _toy_spec()
 
 
+# Runs in a FRESH subprocess per attempt (mirrors the local _validate.py design): loads the
+# just-built .so directly by path, runs the differential gate + benchmark, prints one JSON line.
+# A new interpreter avoids two failure modes seen on Modal: (a) pip-installing the wheel was
+# silently ineffective; (b) re-importing a C-extension in a warm container returns stale code.
+_EVAL_SCRIPT = r'''
+import os, sys, json, glob, time, importlib.util
+import numpy as np
+sys.path.insert(0, "/root")
+from target_spec import TargetSpec
+spec = TargetSpec.from_json(os.environ["RF_SPEC"])
+ref = spec.load_oracle()
+libs = (glob.glob("/root/proj/target/release/lib%s.so" % spec.module_name)
+        + glob.glob("/root/proj/target/release/lib%s.dylib" % spec.module_name))
+if not libs:
+    print(json.dumps({"passed": False, "speedup": 0.0,
+        "error": "no built lib: " + str(os.listdir("/root/proj/target/release"))[:300]})); sys.exit(0)
+loader = importlib.util.spec_from_file_location(spec.module_name, libs[0])
+mod = importlib.util.module_from_spec(loader); loader.loader.exec_module(mod)
+fn = getattr(mod, spec.fn_name)
+rng = np.random.default_rng(12345)
+for xi in spec.make_gate_inputs(rng, 20):
+    try:
+        got = np.asarray(fn(xi))
+    except Exception as e:
+        print(json.dumps({"passed": False, "speedup": 0.0, "error": repr(e)})); sys.exit(0)
+    if not np.allclose(got, np.asarray(ref(xi)), rtol=spec.rtol, atol=spec.atol):
+        print(json.dumps({"passed": False, "speedup": 0.0, "error": "differential mismatch"})); sys.exit(0)
+x = spec.make_bench_input()
+def med(f):
+    f(x); ts = []
+    for _ in range(5):
+        t = time.perf_counter(); f(x); ts.append(time.perf_counter() - t)
+    return sorted(ts)[2]
+print(json.dumps({"passed": True, "speedup": med(ref) / med(fn), "error": ""}))
+'''
+
+
 @app.function(image=rust_image, cpu=4, secrets=[secret], timeout=900)
 def try_one_rust(spec_json: str, champion_src: str, history: str, temperature: float) -> dict:
-    """Swarm worker: LLM writes lib.rs -> maturin build -> import -> gate + benchmark."""
-    import importlib
+    """Swarm worker: LLM writes lib.rs -> cargo build -> (fresh subprocess) gate + benchmark."""
+    import json
     import subprocess
-    import time
-
-    import numpy as np
 
     sys.path.insert(0, "/root")
     from mutate import propose_rust
     from target_spec import TargetSpec as _TargetSpec
 
     spec = _TargetSpec.from_json(spec_json)
-    reference = spec.load_oracle()
     meta = {"model": os.environ.get("OPT_MODEL", "gpt-5.5"), "temperature": temperature}
 
     # 1) LLM rewrites the Rust, in-container (prompt is built from the spec)
@@ -120,46 +153,30 @@ def try_one_rust(spec_json: str, champion_src: str, history: str, temperature: f
         return {"passed": False, "speedup": 0.0, "error": "llm: " + repr(e), "src": "", **meta}
     open("/root/proj/src/lib.rs", "w").write(src)
 
-    # 2) compile (incremental — deps already warm-built into the image)
+    # 2) compile (incremental — pyo3/numpy already warm-built into the image's cargo cache)
     build = subprocess.run(
-        ["maturin", "build", "--release", "--out", "/root/proj/dist",
-         "--manifest-path", "/root/proj/Cargo.toml", "--interpreter", sys.executable],
+        ["cargo", "build", "--release", "--manifest-path", "/root/proj/Cargo.toml"],
         capture_output=True, text=True, cwd="/root/proj",
     )
     if build.returncode != 0:
         tail = (build.stderr.strip().splitlines() or ["compile failed"])[-1]
-        return {"passed": False, "speedup": 0.0, "error": "compile: " + tail[:200], "src": src, **meta}
+        return {"passed": False, "speedup": 0.0, "error": "compile: " + tail[:300], "src": src, **meta}
 
-    # 3) install the freshly built wheel into this interpreter and import it
-    wheels = sorted(f for f in os.listdir("/root/proj/dist") if f.endswith(".whl"))
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps",
-         os.path.join("/root/proj/dist", wheels[-1])],
-        capture_output=True, text=True,
+    # 3) load the freshly built .so + run gate + benchmark in a fresh interpreter
+    proc = subprocess.run(
+        [sys.executable, "-c", _EVAL_SCRIPT],
+        env={**os.environ, "RF_SPEC": spec_json}, capture_output=True, text=True,
     )
-    importlib.invalidate_caches()
-    mod = importlib.import_module(spec.module_name)
-    fn = getattr(mod, spec.fn_name)
-
-    # 4) differential gate on unseen fuzz inputs (the anti-cheat moat)
-    rng = np.random.default_rng(12345)
-    for xi in spec.make_gate_inputs(rng, n=20):
-        try:
-            got = np.asarray(fn(xi))
-        except Exception as e:
-            return {"passed": False, "speedup": 0.0, "error": repr(e), "src": src, **meta}
-        if not np.allclose(got, np.asarray(reference(xi)), rtol=spec.rtol, atol=spec.atol):
-            return {"passed": False, "speedup": 0.0, "error": "differential mismatch", "src": src, **meta}
-
-    # 5) benchmark vs the reference on the same input
-    x = spec.make_bench_input()
-    def med(f):
-        f(x)
-        ts = []
-        for _ in range(5):
-            t = time.perf_counter(); f(x); ts.append(time.perf_counter() - t)
-        return sorted(ts)[2]
-    return {"passed": True, "speedup": med(reference) / med(fn), "error": "", "src": src, **meta}
+    line = (proc.stdout.strip().splitlines() or [""])[-1]
+    try:
+        res = json.loads(line)
+    except Exception:
+        return {"passed": False, "speedup": 0.0,
+                "error": ("eval failed: " + (proc.stderr or proc.stdout or "no output"))[:300],
+                "src": src, **meta}
+    res["src"] = src
+    res.update(meta)
+    return res
 
 
 N_PER_ROUND = int(os.environ.get("N_PER_ROUND", "10"))
