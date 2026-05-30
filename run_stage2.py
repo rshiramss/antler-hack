@@ -23,7 +23,7 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
-from target_spec import TargetSpec, MICROGRAD_SPEC, naive_seed
+from target_spec import TargetSpec, MICROGRAD_SPEC, naive_seed, select_portable_candidate
 
 
 def _maturin_build(lib_rs: str) -> tuple[bool, str]:
@@ -47,11 +47,26 @@ def _resolve_spec(args) -> TargetSpec:
     if not args.swarm_a:
         return MICROGRAD_SPEC
     with open(args.swarm_a) as f:
-        result = json.load(f)
-    # analyze.py can emit either the single top candidate or the full ranked list.
-    if isinstance(result, list):
-        result = result[0]
-    return TargetSpec.from_swarm_a(result, oracle_path=args.oracle)
+        data = json.load(f)
+    results = data if isinstance(data, list) else [data]
+
+    # An explicit --oracle is a user override: trust their top pick as-is.
+    if args.oracle:
+        return TargetSpec.from_swarm_a(results[0], oracle_path=args.oracle)
+
+    # Otherwise pick the highest-scored candidate that fits this pipeline's input profile.
+    spec, report = select_portable_candidate(results)
+    print("Swarm A candidate selection (by score):")
+    for name, score, ok, reason in report:
+        picked = spec is not None and ok and name == spec.name
+        print(f"  [{'PORT' if picked else (' fit' if ok else 'skip')}] {name} (score {score:.2f}) — {reason}")
+        if picked:
+            break
+    if spec is None:
+        raise SystemExit(
+            "No Swarm A candidate fits the local pipeline's input profile; pass --oracle to override."
+        )
+    return spec
 
 
 def main():

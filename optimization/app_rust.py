@@ -17,7 +17,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.append(_REPO_ROOT)
 
-from target_spec import TargetSpec, SOLVE_RUST_SIGNATURE
+from target_spec import TargetSpec, SOLVE_RUST_SIGNATURE, select_portable_candidate
 from mutate import SEED_RUST
 
 app = modal.App("rustforge-swarm")
@@ -75,17 +75,21 @@ def _toy_spec() -> TargetSpec:
 
 
 def _load_spec() -> TargetSpec:
-    """Pick the target: a Swarm A candidate (RUSTFORGE_SWARM_A=candidates.json) or the toy."""
+    """Pick the target: a Swarm A candidate (RUSTFORGE_SWARM_A=candidates.json) or the toy.
+
+    Swarm A ranks by optimization potential, not interface shape, so we pick the
+    highest-scored candidate that actually fits the swarm's 1-D-array contract and
+    print why any higher-scored ones were skipped.
+    """
     path = os.environ.get("RUSTFORGE_SWARM_A")
     if path and os.path.exists(path):
         import json
 
         with open(path) as f:
             data = json.load(f)
-        if isinstance(data, list):          # analyze.py can emit the full ranked list
-            data = data[0]
-        return TargetSpec.from_swarm_a(
-            data,
+        results = data if isinstance(data, list) else [data]
+        spec, report = select_portable_candidate(
+            results,
             module_name="rust_solve",
             fn_name="solve",
             rust_signature=SOLVE_RUST_SIGNATURE,
@@ -93,6 +97,19 @@ def _load_spec() -> TargetSpec:
             rtol=1e-9,
             atol=1e-9,
         )
+        print("Swarm A → swarm candidate selection (by score):")
+        for name, score, ok, reason in report:
+            picked = spec is not None and ok and name == spec.name
+            mark = "PORT" if picked else (" fit" if ok else "skip")
+            print(f"  [{mark}] {name} (score {score:.2f}) — {reason}")
+            if picked:
+                break
+        if spec is None:
+            raise SystemExit(
+                "No Swarm A candidate fits the 1-D f64 array -> 1-D array contract.\n"
+                "Point analyze.py at functions with that shape, or pass an explicit oracle."
+            )
+        return spec
     return _toy_spec()
 
 

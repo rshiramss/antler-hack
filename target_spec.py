@@ -278,6 +278,78 @@ fn {spec.module_name}(m: &Bound<'_, PyModule>) -> PyResult<()> {{
 """
 
 
+# ── Swarm A → Swarm B portability filter ─────────────────────────────────────────
+# Swarm A ranks functions by optimization potential (purity, numeric density, loops,
+# determinism), NOT by interface shape. The Rust swarm, however, requires the contract
+# `solve(x: 1-D f64 array) -> 1-D array` and self-ports the picked function as its own
+# reference. These helpers reconcile the two: pick the highest-scored candidate that
+# actually fits the contract, and report transparently why others were skipped.
+
+def probe_portability(spec: "TargetSpec") -> tuple[bool, str]:
+    """Return (ok, reason): does this spec's self-port oracle fit the array contract?
+
+    Checks the reference takes exactly one required positional arg and, when called on
+    the spec's input profile (variable-length 1-D arrays in array_mode, else the fixed
+    input_shape), returns a finite 1-D array. No side effects — Swarm A already filters
+    for pure, deterministic functions.
+    """
+    import inspect
+
+    import numpy as np
+
+    try:
+        fn = spec.load_oracle()
+    except Exception as e:  # noqa: BLE001 — any failure means "not portable"
+        return False, f"oracle could not be built: {e!r}"
+
+    try:
+        required = [
+            p
+            for p in inspect.signature(fn).parameters.values()
+            if p.default is p.empty
+            and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        if len(required) != 1:
+            return False, f"takes {len(required)} required args; need exactly 1 (a 1-D array)"
+    except (ValueError, TypeError):
+        pass  # builtins without a signature — fall through to the call probe
+
+    shapes = [(4,), (9,)] if spec.array_mode else [tuple(spec.input_shape)]
+    for shp in shapes:
+        x = np.linspace(-1.0, 1.0, int(np.prod(shp))).astype(np.float64).reshape(shp)
+        try:
+            out = np.asarray(fn(x), dtype=np.float64)
+        except Exception as e:  # noqa: BLE001
+            return False, f"call on shape {shp} raised {e!r}"
+        if out.ndim != 1:
+            return False, f"returns ndim={out.ndim}; the Rust contract is a 1-D array out"
+        if not np.all(np.isfinite(out)):
+            return False, "returned non-finite values"
+    return True, "fits 1-D array contract"
+
+
+def select_portable_candidate(results: list, **spec_kwargs):
+    """Pick the highest-scored Swarm A candidate that fits the Rust array contract.
+
+    `results` is analyze.py output ({name, score, source, ...}). Returns
+    (spec | None, report) where report is a list of (name, score, ok, reason) ordered
+    by score so callers can show what was chosen and what was skipped.
+    """
+    ordered = sorted(results, key=lambda r: r.get("score", 0.0), reverse=True)
+    report = []
+    chosen = None
+    for r in ordered:
+        try:
+            spec = TargetSpec.from_swarm_a(r, **spec_kwargs)
+            ok, reason = probe_portability(spec)
+        except Exception as e:  # noqa: BLE001 — malformed candidate
+            ok, reason, spec = False, f"spec build failed: {e!r}", None
+        report.append((r.get("name", "?"), float(r.get("score", 0.0)), ok, reason))
+        if ok and chosen is None:
+            chosen = spec
+    return chosen, report
+
+
 # ── The micrograd MLP as one concrete spec (the former hardcoded default) ────────
 # Was the implicit, baked-in target across the whole pipeline. Now it is just the
 # default spec run_stage2.py falls back to when no Swarm A candidate is supplied.
