@@ -6,6 +6,11 @@ from litellm import completion
 
 load_dotenv(override=True)                       # .env is authoritative (beats stale shell vars); no-op in swarm containers
 
+# litellm expects OPENAI_API_KEY; the project's .env / Modal secret uses OPENAI_KEY.
+# Bridge it so both the local loop and the Modal swarm authenticate from one variable.
+if os.environ.get("OPENAI_KEY") and not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.environ["OPENAI_KEY"]
+
 # Newest models, May 2026 (confirm ids against your provider):
 #   gpt-5.5         — newest frontier, Chat Completions (default)
 #   gpt-5.3-codex   — most capable agentic coding model (best for code edits)

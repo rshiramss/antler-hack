@@ -3,6 +3,7 @@ name = "optimization-doc"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "hypothesis>=6.0",
     "litellm>=1.86.2",
     "maturin>=1.13.3",
     "modal>=1.4.3",

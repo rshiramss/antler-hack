@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "rust_solve"
+version = "0.1.0"
 requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Rust",

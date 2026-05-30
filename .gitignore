@@ -57,3 +57,10 @@ venv/
 
 # Rust loop output
 optimization/champion_lib.rs
+
+# Rust build artifacts (local rust_template crate) — never commit
+rust_template/target/
+rust_template/dist/
+
+# Swarm A handoff (generated at runtime by analyze.py)
+candidates.json
