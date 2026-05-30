@@ -18,6 +18,11 @@
 /RustForge_Project_Breakdown.md
 /build.md
 
+# Cloned GitHub repositories kept locally
+/auto_research/
+/open_evolve/
+/whisper/
+
 # Local/editor noise
 .DS_Store
 __pycache__/
