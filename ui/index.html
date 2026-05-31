@@ -1,0 +1,1477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RustForge — Swarm Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --line:#1d2535;
+    --ink:#e7ecf5; --dim:#8a97ad; --faint:#5a6678;
+    --queued:#2a3242; --spawn:#3b82f6; --compile:#f59e0b; --test:#a855f7;
+    --bench:#06b6d4; --pass:#22c55e; --fail:#ef4444; --crash:#b45309; --champ:#fbbf24;
+    --add:#13351f; --addln:#3ddc84; --del:#3a1416; --delln:#ff8a8a;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-rows:auto auto 1fr 26vh;height:100%;overflow:hidden}
+
+  /* header */
+  header{display:flex;align-items:center;gap:16px;padding:11px 18px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#0e1320,#0a0d14)}
+  .logo{font-family:var(--mono);font-weight:700;letter-spacing:.5px;font-size:18px}.logo b{color:var(--champ)}
+  .tag{color:var(--dim);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .spacer{flex:1}
+  .stat{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05}
+  .stat .v{font-family:var(--mono);font-size:21px;font-weight:700}.stat .l{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.8px}
+  .stat .v.gold{color:var(--champ)}.stat .v.live{color:var(--bench)}
+  .hero{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--dim)}
+  .hero b{color:var(--champ);font-size:21px}
+  select,button{font-family:var(--sans);font-size:12px;background:#0d1422;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer}
+  button:hover,select:hover{border-color:#2c3a55}
+  button.run{background:var(--champ);color:#1a1500;border:none;font-weight:700}
+  .conn{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+  .dot.sim{background:var(--compile);box-shadow:0 0 8px var(--compile)}.dot.liveok{background:var(--pass);box-shadow:0 0 8px var(--pass)}
+
+  /* process funnel strip */
+  .funnel{display:flex;align-items:stretch;gap:0;padding:9px 18px;border-bottom:1px solid var(--line);background:#0c111b}
+  .fstep{flex:1;display:flex;flex-direction:column;gap:2px;position:relative;padding:2px 14px}
+  .fstep+.fstep{border-left:1px solid #141c2b}
+  .fstep .n{font-family:var(--mono);font-size:18px;font-weight:700}
+  .fstep .lab{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.7px}
+  .fstep .lab b{color:var(--dim)}
+  .fstep .arrow{position:absolute;right:-7px;top:50%;transform:translateY(-50%);color:#243049;font-size:13px}
+  .fstep.gen .n{color:#9fb0c8}.fstep.comp .n{color:var(--compile)}.fstep.ver .n{color:var(--test)}
+  .fstep.fast .n{color:var(--pass)}.fstep.champ .n{color:var(--champ)}
+  .fstep .sub{font-size:10px;color:var(--faint)}.fstep .sub .bad{color:var(--delln)}
+
+  /* main */
+  main{display:grid;grid-template-columns:0.82fr 1.18fr;gap:11px;padding:11px;min-height:0}
+  .col{display:grid;gap:11px;min-height:0}
+  .col.left{grid-template-rows:1.2fr 1fr}
+  .col.right{grid-template-rows:1fr auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .hd{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--line)}
+  .hd h2{margin:0;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--dim)}
+  .hd .sub{font-size:11px;color:var(--faint);font-family:var(--mono)}.grow{flex:1}
+  .body{flex:1;min-height:0;overflow:auto}
+
+  /* swarm grid */
+  .swarm-wrap{padding:12px}
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+  .cell{position:relative;aspect-ratio:1/1;border-radius:7px;background:var(--queued);border:1px solid #1b2334;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#cfd8e8;transition:background .25s,box-shadow .25s,transform .12s}
+  .cell .id{opacity:.5;font-size:7px}.cell .sp{font-weight:700;font-size:10px}
+  .cell.spawning{background:var(--spawn)}.cell.compiling{background:var(--compile);color:#241a00}
+  .cell.testing{background:var(--test)}.cell.benchmarking{background:var(--bench);color:#03252b}
+  .cell.passed{background:var(--pass);color:#06210f}.cell.failed{background:var(--fail)}
+  .cell.crashed{background:var(--crash);color:#1c1200}
+  .cell.champion{background:var(--champ);color:#1a1500;box-shadow:0 0 0 2px #fff6,0 0 16px var(--champ);transform:scale(1.07);z-index:2}
+  .cell.active{animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 #fff0}50%{box-shadow:0 0 11px 1px #ffffff55}}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:11px;font-size:9.5px;color:var(--dim)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}.legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+  /* narration feed */
+  .feed{padding:6px 0;font-family:var(--mono);font-size:11px}
+  .line{display:flex;gap:8px;padding:4px 13px;border-bottom:1px solid #111824;animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+  .line .ic{width:14px;text-align:center}
+  .line .tx{color:#c4cfe0}.line .rd{color:var(--faint);margin-left:auto;font-size:9.5px}
+  .line.champ .tx{color:var(--champ);font-weight:700}.line.champ{background:#1c160625}
+  .line.hack .tx{color:var(--delln)}.line.crash .tx{color:#e0a35a}
+  .line.pass .tx{color:#8ee0a8}.line.stage .tx{color:#9aa7bd}.line.round .tx{color:#9fb0c8;font-weight:600}
+  .line.end{background:#0f1626}.line.end .tx{color:#9fb0c8}
+
+  /* champion diff */
+  .diffbanner{display:flex;align-items:center;gap:12px;padding:9px 13px;background:#0e1626;border-bottom:1px solid var(--line)}
+  .delta{font-family:var(--mono);font-weight:700;font-size:15px}
+  .delta .from{color:var(--faint)}.delta .to{color:var(--champ)}.delta .gain{color:var(--pass);font-size:13px;margin-left:4px}
+  .why{font-size:11.5px;color:var(--dim);flex:1}.why b{color:#cdd6e6}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg button{border:0;border-radius:0;background:#0d1422;font-size:10.5px;padding:5px 9px}
+  .seg button.on{background:#1c2740;color:#fff}
+  pre.code{margin:0;font-family:var(--mono);font-size:11px;line-height:1.55;white-space:pre;overflow:auto}
+  .dl{display:block;padding:0 12px 0 0;white-space:pre}
+  .dl .g{display:inline-block;width:22px;text-align:center;color:#46536b;user-select:none}
+  .dl.add{background:var(--add)}.dl.add .g{color:var(--addln)}
+  .dl.del{background:var(--del)}.dl.del .g{color:var(--delln)}
+  .code .kw{color:#7aa2ff}.code .ty{color:#5ad6c0}.code .mac{color:#e6a35a}.code .fn{color:#f0c674}.code .num{color:#d19a66}.code .cm{color:#5a6678;font-style:italic}.code .str{color:#9ece6a}
+
+  /* lineage ratchet */
+  .lineage{display:flex;align-items:flex-end;gap:0;padding:14px 14px 12px;overflow-x:auto;flex:1;min-height:0;box-shadow:inset 0 -1px 0 var(--line)}
+  .node{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;min-width:96px;position:relative}
+  .node .bar{width:34px;background:linear-gradient(180deg,#2a3450,#1a2236);border:1px solid #2c3a55;border-radius:5px 5px 0 0;transition:height .4s}
+  .node.on .bar{background:linear-gradient(180deg,#fbbf24,#b07e10);border-color:#fbbf24}
+  .node .sp{font-family:var(--mono);font-weight:700;font-size:12px;color:#cdd6e6}.node.on .sp{color:var(--champ)}
+  .node .desc{font-size:9px;color:var(--faint);text-align:center;max-width:92px;line-height:1.25}
+  .node .rnd{font-size:9px;color:var(--faint);font-family:var(--mono)}
+  .conn-line{align-self:center;color:#2c3a55;font-size:18px;padding:0 1px 18px}
+
+  /* journal */
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+  thead th{position:sticky;top:0;background:var(--panel2);color:var(--faint);text-align:left;font-weight:600;text-transform:uppercase;letter-spacing:.6px;font-size:9px;padding:7px 12px;border-bottom:1px solid var(--line)}
+  tbody td{padding:6px 12px;border-bottom:1px solid #131a27;white-space:nowrap}
+  tbody td.desc{white-space:normal;color:var(--dim)}tbody tr td.sp{font-weight:700}
+  .pill{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-radius:5px;padding:2px 7px}
+  .pill.keep{background:#0c3a20;color:#5ee08a}.pill.discard{background:#3a1414;color:#ff9a9a}.pill.crash{background:#3a2a0c;color:#f0c074}
+  tbody tr.flash{animation:rowflash 1s ease}@keyframes rowflash{from{background:#1d2740}to{background:transparent}}
+  .rh{color:#ff7b7b}.badge-hack{display:inline-block;margin-left:6px;font-size:8px;color:#ffb4b4;border:1px solid #5a2030;border-radius:4px;padding:1px 5px}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#1f2940;border-radius:6px}
+  /* ===== landing + analysis (Swarm A front door) ===== */
+  .screen{position:absolute;inset:0;z-index:5;background:radial-gradient(1100px 560px at 50% -8%,#141d30,#0a0d14)}
+  #landing{display:flex;align-items:center;justify-content:center}
+  .land-card{width:min(740px,92vw);text-align:center;padding:20px}
+  .logo.big{font-size:46px;letter-spacing:1px;margin-bottom:12px}
+  .land-sub{color:var(--dim);font-size:15px;max-width:580px;margin:0 auto 28px;line-height:1.55}
+  .land-input{display:flex;gap:10px;justify-content:center}
+  .land-input input{flex:1;max-width:520px;font-family:var(--mono);font-size:14px;padding:13px 15px;border-radius:10px;background:#0d1422;border:1px solid var(--line);color:var(--ink)}
+  .land-input input:focus{outline:none;border-color:var(--champ)}
+  .land-input button{padding:0 20px;font-size:14px}
+  .land-examples{margin-top:18px;color:var(--faint);font-size:12px;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .chip{background:#0f1626;border:1px solid var(--line);border-radius:999px;color:var(--dim);font-size:12px;padding:5px 11px;cursor:pointer;font-family:var(--mono)}
+  .chip:hover{border-color:var(--champ);color:var(--ink)}
+  .ghost{background:transparent;border:1px solid var(--line);color:var(--dim);font-size:11px}
+  #analysis{display:none;flex-direction:column;padding:18px 22px}
+  .an-head{display:flex;align-items:center;gap:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .an-repo{font-family:var(--mono);color:var(--champ);font-size:16px}
+  .an-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:16px;padding-top:16px;overflow:auto}
+  .an-scan{font-family:var(--mono);font-size:12.5px;color:#9fb0c8;background:#0c1119;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .an-scan div{padding:2px 0;animation:fade .3s ease}
+  .an-title{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+  .an-title span{color:var(--champ);font-family:var(--mono);text-transform:none;letter-spacing:0}
+  table.cands{width:100%;border-collapse:collapse}
+  table.cands th{text-align:left;font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;padding:8px 12px;border-bottom:1px solid var(--line)}
+  table.cands td{padding:11px 12px;border-bottom:1px solid #131a27;font-size:13px;vertical-align:middle}
+  table.cands tr.top{background:#12192a}
+  .fnname{font-family:var(--mono);color:var(--ink)}
+  .fnfile{font-family:var(--mono);color:var(--faint);font-size:11px;margin-top:2px}
+  .sigs{display:flex;gap:5px;flex-wrap:wrap}
+  .sig{font-size:9px;border-radius:5px;padding:2px 6px;border:1px solid #243049;color:#5a6678}
+  .sig.on{background:#0c2a1a;border-color:#1f6a44;color:#5ee08a}
+  .scorebar{display:inline-block;width:90px;height:8px;background:#1a2233;border-radius:5px;overflow:hidden;vertical-align:middle;margin-right:7px}
+  .scorebar i{display:block;height:100%;background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+  .cands .forge{background:var(--champ);color:#1a1500;border:none;border-radius:8px;padding:7px 13px;font-weight:700;font-size:12px;cursor:pointer}
+  .cands .forge:hover{filter:brightness(1.08)}
+
+  /* ============================================================
+     MOLTEN STEEL — forge design system (overrides the base above)
+     dark steel neutrals · one molten-gold accent · harmonized status
+     Space Grotesk (display) · Inter (UI) · JetBrains Mono (code/metrics)
+     ============================================================ */
+  :root{
+    --bg:#0b0e14; --panel:#12161f; --panel2:#0e131b; --raised:#161c27;
+    --line:#222a37; --line2:#2d3744;
+    --ink:#eef1f7; --txt:#c3ccdb; --dim:#8b94a5; --faint:#5b6473;
+    --gold:#f2b13c; --gold-hi:#ffc862; --gold-deep:#a9741b;
+    --queued:#262e3b; --spawn:#5b8cff; --compile:#e0913a; --test:#9d6bff;
+    --bench:#27c2cd; --pass:#3fd089; --fail:#ff5d6c; --crash:#b9601f; --champ:#f2b13c;
+    --add:#0f2c1d; --addln:#5fdd9b; --del:#321722; --delln:#ff8a98;
+    --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 14px 34px -16px rgba(0,0,0,.7);
+    --display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  body{color:var(--txt);font-size:14px;text-rendering:optimizeLegibility}
+  b{font-weight:600}
+  /* header + brand */
+  header{padding:12px 20px;background:linear-gradient(180deg,#11161f,var(--bg))}
+  .logo{font-family:var(--display);font-weight:700;letter-spacing:.02em;font-size:19px;color:var(--ink)}
+  .logo b{color:var(--gold)}
+  .tag{font-family:var(--mono);background:var(--panel);padding:4px 12px;color:var(--dim)}
+  .stat .v{font-size:22px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+  .stat .l{font-size:9.5px;letter-spacing:.12em;margin-top:3px}
+  .stat .v.gold{color:var(--gold)}
+  .hero{font-weight:500;font-size:13px;font-variant-numeric:tabular-nums}
+  .hero b{color:var(--gold);font-size:20px;font-weight:600}
+  select,button{font-weight:500;background:var(--raised);border-radius:9px;padding:8px 12px;transition:border-color .15s,filter .15s}
+  button:hover,select:hover{border-color:var(--line2)}
+  button.run{background:linear-gradient(180deg,var(--gold-hi),var(--gold));color:#241803;box-shadow:0 6px 16px -8px var(--gold-deep)}
+  button.run:hover{filter:brightness(1.06)}
+  .ghost{background:transparent}
+  /* funnel */
+  .funnel{padding:11px 20px;background:var(--panel2)}
+  .fstep{padding:2px 16px;gap:3px}
+  .fstep+.fstep{border-left:1px solid var(--line)}
+  .fstep .n{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .fstep .lab{letter-spacing:.08em}
+  .fstep .arrow{color:var(--line2)}
+  /* cards */
+  main{gap:14px;padding:14px}
+  .col{gap:14px}
+  .card{border-radius:14px;box-shadow:var(--shadow)}
+  .hd{padding:11px 15px;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent)}
+  .hd h2{font-family:var(--display);font-weight:600;font-size:11px;letter-spacing:.14em}
+  /* swarm grid */
+  .swarm-wrap{padding:14px}
+  .grid{gap:7px}
+  .cell{border-radius:8px;border:1px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);font-size:9px;color:#e9eef6}
+  .cell .id{opacity:.55;font-size:7.5px}.cell .sp{font-size:10.5px;font-variant-numeric:tabular-nums}
+  .cell.compiling{color:#241a05}.cell.benchmarking{color:#042427}.cell.passed{color:#04230f}
+  .cell.failed{color:#2a070b}.cell.crashed{color:#1c1003}
+  .cell.champion{background:linear-gradient(160deg,var(--gold-hi),var(--gold));color:#231703;box-shadow:0 0 0 2px rgba(255,255,255,.4),0 0 18px var(--gold);transform:scale(1.08)}
+  @keyframes pulse{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}50%{box-shadow:0 0 12px 1px rgba(255,255,255,.34)}}
+  .legend{gap:11px;font-size:10px}
+  /* narration */
+  .feed{font-size:12px}
+  .line{gap:9px;padding:5px 15px;border-bottom:1px solid rgba(255,255,255,.03)}
+  .line .ic{color:var(--faint)}
+  .line .tx{color:var(--txt)}.line .rd{font-size:10px}
+  .line.champ .tx{color:var(--gold)}.line.champ{background:rgba(242,177,60,.06)}.line.champ .ic{color:var(--gold)}
+  .line.hack .tx{color:var(--delln)}.line.hack .ic{color:var(--fail)}
+  .line.crash .tx{color:var(--compile)}.line.crash .ic{color:var(--crash)}
+  .line.pass .tx{color:var(--pass)}.line.pass .ic{color:var(--pass)}
+  .line.stage .tx{color:var(--dim)}.line.round .tx{color:var(--ink)}
+  .line.end{background:rgba(255,255,255,.02)}.line.end .tx{color:var(--dim)}
+  /* diff */
+  .diffbanner{gap:14px;padding:11px 15px;background:linear-gradient(90deg,rgba(242,177,60,.07),transparent);border-left:2px solid var(--gold)}
+  .delta{font-size:16px;font-variant-numeric:tabular-nums}
+  .delta .to{color:var(--gold)}
+  .why{font-size:12px;line-height:1.45}.why b{color:var(--ink)}
+  .seg{border-radius:8px}
+  .seg button{background:transparent;color:var(--dim);font-size:10.5px;padding:6px 11px}
+  .seg button.on{background:var(--raised);color:var(--ink)}
+  pre.code{font-size:12.5px;line-height:1.62;padding:4px 0}
+  .dl .g{width:24px}
+  .code .fn{color:var(--gold-hi)}.code .cm{color:var(--faint)}
+  /* lineage */
+  .lineage{padding:16px 16px 14px}
+  .node{gap:6px;min-width:104px}
+  .node .bar{width:36px;background:linear-gradient(180deg,#33405a,#1b2434);border-color:var(--line2)}
+  .node.on .bar{background:linear-gradient(180deg,var(--gold-hi),var(--gold-deep));border-color:var(--gold)}
+  .node .sp{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}.node.on .sp{color:var(--gold)}
+  .node .desc{font-size:10.5px;max-width:96px;line-height:1.3}
+  .node .rnd{font-size:9.5px}
+  .conn-line{color:var(--line2)}
+  /* journal */
+  table{font-size:11.5px;font-variant-numeric:tabular-nums}
+  thead th{letter-spacing:.08em;padding:8px 13px}
+  tbody td{padding:7px 13px;border-bottom:1px solid rgba(255,255,255,.03);color:var(--txt)}
+  .pill{font-family:var(--sans);letter-spacing:.06em;padding:3px 8px}
+  .pill.keep{background:rgba(63,208,137,.14);color:var(--pass)}
+  .pill.discard{background:rgba(255,93,108,.13);color:var(--fail)}
+  .pill.crash{background:rgba(224,145,58,.15);color:var(--compile)}
+  tbody tr.flash{animation:rowflash 1s ease}@keyframes rowflash{from{background:rgba(242,177,60,.1)}to{background:transparent}}
+  ::-webkit-scrollbar-thumb{background:#222b3a;border:2px solid var(--panel)}
+  /* landing + analysis */
+  .screen{background:radial-gradient(900px 460px at 50% -6%,rgba(242,177,60,.10),transparent 60%),radial-gradient(1200px 700px at 50% 0%,#141a26,var(--bg))}
+  .logo.big{font-size:54px;letter-spacing:.01em;margin-bottom:14px}
+  .land-sub{font-size:16px;max-width:600px;margin:0 auto 30px;line-height:1.6}
+  .land-input input{max-width:540px;padding:14px 16px;border-radius:11px;background:var(--panel)}
+  .land-input input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(242,177,60,.16)}
+  .chip{background:var(--panel);padding:6px 13px}
+  .chip:hover{border-color:var(--gold);color:var(--ink)}
+  .an-repo{color:var(--gold)}
+  .an-scan{font-size:12.5px;color:var(--dim);background:#0a0e15;border-radius:11px;padding:14px 16px;line-height:1.7}
+  .an-title{font-family:var(--display);letter-spacing:.12em}
+  .an-title span{color:var(--gold)}
+  table.cands td{padding:13px;border-bottom:1px solid var(--line)}
+  table.cands tr.top{background:rgba(242,177,60,.05)}
+  table.cands tbody tr:hover{background:rgba(255,255,255,.02)}
+  .fnfile{font-size:11px;margin-top:3px}
+  .sig{padding:3px 7px;border-color:var(--line2);color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+  .sig.on{background:rgba(63,208,137,.12);border-color:rgba(63,208,137,.4);color:var(--pass)}
+  .scorebar i{background:linear-gradient(90deg,var(--compile),var(--gold))}
+  .cands .forge{background:linear-gradient(180deg,var(--gold-hi),var(--gold));color:#241803;border-radius:9px;padding:8px 15px;box-shadow:0 6px 14px -8px var(--gold-deep)}
+
+  /* ============================================================
+     CALMER — dial down the glow (flatter, more premium)
+     ============================================================ */
+  @keyframes pulse{0%,100%{opacity:.72}50%{opacity:1}}
+  .cell.active{animation:pulse 1.4s ease-in-out infinite}
+  .cell{box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+  .cell.champion{background:linear-gradient(160deg,var(--gold-hi),var(--gold));color:#231703;box-shadow:0 0 0 2px rgba(255,255,255,.2),0 5px 14px -6px rgba(0,0,0,.6);transform:scale(1.05)}
+  .dot.sim{box-shadow:none}.dot.liveok{box-shadow:none}
+  button.run{box-shadow:none}.cands .forge{box-shadow:none}
+  .line.champ{background:rgba(242,177,60,.045)}
+  .land-input input:focus{box-shadow:0 0 0 3px rgba(242,177,60,.12)}
+  .screen{background:radial-gradient(900px 460px at 50% -4%,rgba(242,177,60,.05),transparent 62%),linear-gradient(180deg,#10151d,var(--bg))}
+
+  /* ============================================================
+     ANALYSIS — use the space: center the block, taller rows
+     ============================================================ */
+  .an-head,.an-scan,.an-body{max-width:1180px;width:100%;margin-left:auto;margin-right:auto}
+  .an-body{justify-content:center}
+  table.cands td{padding:16px 13px}
+  .fnname{font-size:14px}
+
+  /* ============================================================
+     TILING BENTO GRID — panels are grid items (never overlap)
+     drag header to reorder · corner handle to resize · min/max/snap
+     ============================================================ */
+  .app{grid-template-rows:auto auto 1fr}
+  #board{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-auto-rows:92px;
+    grid-auto-flow:row dense;gap:var(--space-3);padding:var(--space-3);flex:1;min-height:0;overflow:auto}
+  #board > .card{position:relative;grid-column:span var(--cspan,3);grid-row:span var(--rspan,3);
+    min-height:0;min-width:0;box-shadow:none;transition:outline-color .12s}
+  #board > .card > .hd{cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none}
+  #board > .card.dragging{opacity:.92;outline:2px solid #000;outline-offset:-2px;z-index:5}
+  #board > .card.dragging > .hd{cursor:grabbing}
+  #board > .card.min{grid-row:span 1 !important}
+  #board > .card.min > .body,#board > .card.min .lineage,#board > .card.min .diffbanner{display:none}
+  /* header window controls */
+  .win-btns{display:inline-flex;gap:4px;margin-left:6px}
+  .win-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:20px;
+    padding:0;font-size:12px;line-height:1;background:#FFFFFF;border:1px solid var(--line);
+    border-radius:4px;color:#6B7280;cursor:pointer}
+  .win-btn:hover{border-color:#000;color:#000}
+  /* resize handle (bottom-right corner) */
+  .win-rsz{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;
+    z-index:7;touch-action:none}
+  .win-rsz::after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;
+    border-right:2px solid var(--line2);border-bottom:2px solid var(--line2)}
+  #board > .card:hover .win-rsz::after,#board > .card.resizing .win-rsz::after{border-color:#000}
+  /* snap-to-grid button in the header bar */
+  #snapBtn{font-family:var(--sans)}
+
+  /* ============================================================
+     SHIP-CLEAN — design-review fixes (contrast + accent rigor)
+     ============================================================ */
+  /* 1) promote sub-12px labels off --faint (~3:1) onto --dim (~5.9:1, clears AA) */
+  .stat .l,.fstep .lab,.node .desc,.node .rnd,.fnfile,.hd .sub,.line .rd,thead th,table.cands th{color:var(--dim)}
+  /* 2) separate crash from compile (was nearly the same orange) */
+  :root{--crash:#9c5a24}
+  .line.crash .tx{color:#cf8c52}
+  /* 3) reserve gold strictly for "the kept champion" — neutral the score meter */
+  .scorebar i{background:linear-gradient(90deg,#36425a,var(--bench))}
+  /* 4) dual-code the diff gutter (color + position bar) for colorblind/gamma safety */
+  .dl.add{box-shadow:inset 2px 0 0 var(--addln)}
+  .dl.del{box-shadow:inset 2px 0 0 var(--delln)}
+  /* 5) lift the near-invisible cell id ticks */
+  .cell .id{opacity:.82}
+
+  /* ============================================================
+     MONOCHROMATIC MINIMALIST — final light re-skin (overrides all above)
+     light neutrals · BLACK accent · borders over fills · only two shadows
+     Inter (display+UI) · JetBrains Mono (code/metrics) · no glow anywhere
+     ============================================================ */
+  :root{
+    --bg:#FAFAFA; --panel:#FFFFFF; --panel2:#FFFFFF; --raised:#F3F4F6;
+    --line:#E5E7EB; --line2:#D1D5DB;
+    --ink:#111827; --txt:#111827; --dim:#6B7280; --faint:#9CA3AF;
+    --gold:#000000; --gold-hi:#111827; --gold-deep:#374151; --champ:#000000;
+    --queued:#F3F4F6; --spawn:#E5E7EB; --compile:#D1D5DB; --test:#9CA3AF; --bench:#6B7280;
+    --pass:#111827; --fail:#DC2626; --crash:#9CA3AF;
+    --add:#F3F4F6; --addln:#111827; --del:#FFFFFF; --delln:#DC2626;
+    --shadow-sm:0 1px 2px 0 rgba(0,0,0,.05); --shadow-md:0 4px 6px -1px rgba(0,0,0,.1); --shadow:none;
+    --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-7:48px;
+    --display:"Inter",ui-sans-serif,system-ui,sans-serif;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  html,body{background:var(--bg)}
+  body{color:#111827;font-size:16px}
+  b{font-weight:600;color:#111827}
+  /* kill every glow / drop-shadow / text-shadow that earlier layers added */
+  *{text-shadow:none}
+  @keyframes pulse{0%,100%{opacity:.72}50%{opacity:1}}
+  .cell.active{animation:pulse 1.4s ease-in-out infinite}
+  .dot.sim,.dot.liveok{box-shadow:none}
+  button.run,.cands .forge{box-shadow:none}
+
+  /* header — flat white, bottom border only */
+  header{background:#FAFAFA;border-bottom:1px solid var(--line)}
+  .logo{font-family:var(--display);color:#111827}
+  .logo b{color:#000}
+  .tag{background:#FFFFFF;border:1px solid var(--line);color:#6B7280;border-radius:4px}
+  .stat .v{color:#111827;font-variant-numeric:tabular-nums}
+  .stat .v.gold,.stat .v.live{color:#111827}
+  .hero{color:#111827;font-variant-numeric:tabular-nums}
+  .hero b{color:#000}
+
+  /* buttons — primary black, secondary white+border, radius 4, never pill */
+  select,button{background:#FFFFFF;border:1px solid var(--line);color:#111827;border-radius:4px}
+  button:hover,select:hover{border-color:var(--line2)}
+  button.run{background:#000;color:#fff;border:1px solid #000;border-radius:4px}
+  button.run:hover{background:#374151;border-color:#374151;filter:none}
+  .ghost{background:#FFFFFF;border:1px solid var(--line);color:#111827;border-radius:4px}
+  .conn{color:#6B7280}
+  .dot{background:#9CA3AF}
+  .dot.sim{background:#6B7280}.dot.liveok{background:#111827}
+
+  /* funnel — flat, bottom border, AA labels */
+  .funnel{background:#FAFAFA;border-bottom:1px solid var(--line)}
+  .fstep+.fstep{border-left:1px solid var(--line)}
+  .fstep .n{color:#111827;font-variant-numeric:tabular-nums}
+  .fstep.gen .n,.fstep.comp .n,.fstep.ver .n,.fstep.fast .n,.fstep.champ .n{color:#111827}
+  .fstep .lab,.fstep .lab b,.fstep .sub{color:#6B7280}
+  .fstep .sub .bad{color:#DC2626}
+  .fstep .arrow{color:#D1D5DB}
+
+  /* cards — white, border, radius 8, NO shadow */
+  .card{background:#FFFFFF;border:1px solid var(--line);border-radius:8px;box-shadow:none}
+  .hd{background:#FFFFFF;border-bottom:1px solid var(--line)}
+  .hd h2{font-family:var(--display);color:#6B7280}
+  .hd .sub{color:#6B7280;font-variant-numeric:tabular-nums}
+
+  /* swarm cells — grayscale "heating" ramp + one red + black */
+  .cell{background:var(--queued);border:1px solid var(--line);box-shadow:none;color:#111827}
+  .cell .id{color:#6B7280;opacity:.85}
+  .cell .sp{color:inherit;font-variant-numeric:tabular-nums}
+  .cell.spawning{background:#E5E7EB;color:#111827}
+  .cell.compiling{background:#D1D5DB;color:#111827}
+  .cell.testing{background:#9CA3AF;color:#FFFFFF}
+  .cell.benchmarking{background:#6B7280;color:#FFFFFF}
+  .cell.passed{background:#111827;color:#FFFFFF}
+  .cell.passed .id{color:#D1D5DB}
+  .cell.failed{background:#DC2626;color:#FFFFFF}
+  .cell.failed .id{color:#FCD9D9}
+  .cell.crashed{background:#FFFFFF;border:1px dashed var(--line2);color:#9CA3AF;box-shadow:none}
+  .cell.crashed .id{color:#9CA3AF}
+  .cell.champion{background:#000;color:#FFFFFF;box-shadow:0 0 0 2px #fff inset,0 0 0 2px #000;transform:scale(1.05)}
+  .cell.champion .id{color:#9CA3AF}
+  .legend{color:#6B7280}
+
+  /* narration feed */
+  .feed{color:#111827}
+  .line{border-bottom:1px solid #F3F4F6}
+  .line .ic{color:#9CA3AF}
+  .line .tx{color:#111827}.line .rd{color:#6B7280}
+  .line.champ{background:#F3F4F6}.line.champ .tx{color:#111827;font-weight:700}.line.champ .ic{color:#000}
+  .line.hack .tx{color:#DC2626}.line.hack .ic{color:#DC2626}
+  .line.crash .tx{color:#6B7280}.line.crash .ic{color:#9CA3AF}
+  .line.pass .tx{color:#111827}.line.pass .ic{color:#111827}
+  .line.stage .tx{color:#6B7280}.line.round .tx{color:#111827}
+  .line.end{background:#F3F4F6}.line.end .tx{color:#6B7280}
+
+  /* champion diff */
+  .diffbanner{background:#FFFFFF;border-bottom:1px solid var(--line);border-left:2px solid #000}
+  .delta{font-variant-numeric:tabular-nums}
+  .delta .from{color:#6B7280}.delta .to{color:#000}.delta .gain{color:#111827}
+  .why{color:#6B7280}.why b{color:#111827}
+  .seg{border:1px solid var(--line);border-radius:4px}
+  .seg button{background:#FFFFFF;color:#6B7280;border-radius:0}
+  .seg button.on{background:#F3F4F6;color:#111827}
+  pre.code{color:#111827}
+  .dl.add{background:#F3F4F6}.dl.add .g{color:#111827}
+  .dl.del{background:#FFFFFF;color:#DC2626}.dl.del .g{color:#DC2626}
+  .dl .g{color:#9CA3AF}
+  .code .kw{color:#111827;font-weight:600}
+  .code .ty{color:#374151}
+  .code .mac{color:#374151}
+  .code .fn{color:#000}
+  .code .num{color:#6B7280}
+  .code .cm{color:#9CA3AF;font-style:italic}
+  .code .str{color:#374151}
+
+  /* lineage */
+  .node .bar{background:#E5E7EB;border:1px solid var(--line2)}
+  .node.on .bar{background:#000;border-color:#000}
+  .node .sp{color:#6B7280;font-variant-numeric:tabular-nums}.node.on .sp{color:#000}
+  .node .desc,.node .rnd{color:#6B7280}
+  .conn-line{color:#D1D5DB}
+
+  /* journal */
+  table{font-variant-numeric:tabular-nums}
+  thead th{background:#FFFFFF;color:#6B7280;border-bottom:1px solid var(--line)}
+  tbody td{border-bottom:1px solid #F3F4F6;color:#111827}
+  tbody td.desc{color:#6B7280}
+  .pill{font-family:var(--sans)}
+  .pill.keep{background:#F3F4F6;color:#111827}
+  .pill.discard{background:#F3F4F6;color:#DC2626}
+  .pill.crash{background:#F3F4F6;color:#6B7280}
+  tbody tr.flash{animation:rowflash 1s ease}
+  @keyframes rowflash{from{background:#F3F4F6}to{background:transparent}}
+  .rh{color:#DC2626}
+  .badge-hack{color:#DC2626;border:1px solid #E5E7EB;border-radius:4px}
+
+  /* landing + analysis */
+  .screen{background:#FAFAFA}
+  #landing,#analysis{background:#FAFAFA}
+  .land-sub{color:#6B7280}
+  .land-sub b{color:#111827}
+  .land-input input{background:#FFFFFF;border:1px solid var(--line);color:#111827;border-radius:4px}
+  .land-input input:focus{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.08)}
+  .chip{background:#FFFFFF;border:1px solid var(--line);color:#6B7280;border-radius:4px}
+  .chip:hover{border-color:#000;color:#111827}
+  .an-repo{color:#000}
+  .an-scan{background:#FFFFFF;border:1px solid var(--line);color:#6B7280;border-radius:8px}
+  .an-title{font-family:var(--display);color:#6B7280}
+  .an-title span{color:#000}
+  table.cands th{color:#6B7280;border-bottom:1px solid var(--line)}
+  table.cands td{border-bottom:1px solid #F3F4F6}
+  table.cands tr.top{background:#F3F4F6}
+  table.cands tbody tr:hover{background:#FAFAFA}
+  .fnname{color:#111827}.fnfile{color:#6B7280}
+  .sig{border:1px solid var(--line);color:#9CA3AF}
+  .sig.on{background:#F3F4F6;border-color:var(--line2);color:#111827}
+  .scorebar{background:#F3F4F6}
+  .scorebar i{background:#111827}
+  .cands .forge{background:#000;color:#fff;border:1px solid #000;border-radius:4px;box-shadow:none}
+  .cands .forge:hover{background:#374151;border-color:#374151;filter:none}
+
+  /* light scrollbars */
+  ::-webkit-scrollbar-thumb{background:#D1D5DB;border:2px solid transparent;background-clip:padding-box;border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* ============================================================
+     LIGHT + COLOR — restore a tasteful palette on the clean light
+     shell (keeps #FAFAFA/#FFF surfaces & borders; warm amber accent
+     + real status hues + green/red diff) and reduce visual density.
+     ============================================================ */
+  :root{
+    --gold:#F59E0B; --gold-hi:#FBBF24; --gold-deep:#B45309; --champ:#F59E0B;
+    --queued:#E5E7EB; --spawn:#3B82F6; --compile:#F59E0B; --test:#8B5CF6;
+    --bench:#06B6D4; --pass:#16A34A; --fail:#DC2626; --crash:#9CA3AF;
+    --add:#ECFDF5; --addln:#16A34A; --del:#FEF2F2; --delln:#DC2626;
+  }
+  .logo b{color:var(--champ)} .hero b{color:var(--champ)} .stat .v.gold{color:var(--champ)}
+  button.run,.cands .forge{background:var(--champ);color:#3a2400;border:1px solid var(--champ)}
+  button.run:hover,.cands .forge:hover{background:var(--gold-deep);border-color:var(--gold-deep);color:#fff}
+  .cell.passed{background:var(--pass);color:#fff}
+  .cell.failed{background:var(--fail);color:#fff}
+  .cell.spawning{background:var(--spawn);color:#fff}
+  .cell.compiling{background:var(--compile);color:#3a2400}
+  .cell.testing{background:var(--test);color:#fff}
+  .cell.benchmarking{background:var(--bench);color:#06303a}
+  .cell.champion{background:var(--champ);color:#3a2400;box-shadow:0 0 0 2px #fff inset,0 0 0 2px var(--champ);transform:scale(1.06)}
+  .dl.add{background:var(--add)} .dl.add .g{color:var(--addln)}
+  .dl.del{background:var(--del)} .dl.del .g{color:var(--delln)}
+  .code .kw{color:#2563EB;font-weight:600} .code .ty{color:#0891B2} .code .mac{color:#B45309}
+  .code .fn{color:#D97706} .code .num{color:#9333EA} .code .cm{color:#9CA3AF;font-style:italic} .code .str{color:#16A34A}
+  .pill.keep{background:#ECFDF5;color:#15803D} .pill.discard{background:#FEF2F2;color:#DC2626} .pill.crash{background:#FFF7ED;color:#C2410C}
+  .node.on .bar{background:var(--champ);border-color:var(--gold-deep)}
+  .line.champ .tx,.line.champ .ic{color:var(--gold-deep)}
+  .scorebar i{background:var(--champ)}
+  /* ---- reduce density ---- */
+  .fstep .sub{display:none}
+  .funnel{padding:8px 16px}
+  #board{grid-auto-rows:70px}
+
+  /* ============================================================
+     DARK MODE — flip all surfaces/text/borders to dark; KEEP the
+     colorful accents (amber accent, blue/violet/cyan/green/red swarm,
+     green/red diff). Overrides the hardcoded light values above.
+     ============================================================ */
+  :root{
+    --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --raised:#0d1422;
+    --line:#1d2535; --line2:#2c3a55;
+    --ink:#e7ecf5; --txt:#cdd6e6; --dim:#8a97ad; --faint:#5a6678;
+    --gold:#fbbf24; --gold-hi:#fbbf24; --gold-deep:#b07e10; --champ:#fbbf24;
+    --queued:#2a3242; --spawn:#3b82f6; --compile:#f59e0b; --test:#a855f7; --bench:#06b6d4;
+    --pass:#22c55e; --fail:#ef4444; --crash:#b45309;
+    --add:#13351f; --addln:#3ddc84; --del:#3a1416; --delln:#ff8a8a;
+  }
+  body{color:var(--txt)} b{color:var(--ink)}
+  .screen{background:radial-gradient(900px 460px at 50% -4%,rgba(245,158,11,.06),transparent 62%),var(--bg)}
+  #landing,#analysis{background:transparent}
+  header{background:linear-gradient(180deg,#10151d,var(--bg))}
+  .logo{color:var(--ink)} .tag{background:var(--panel);color:var(--dim)}
+  .stat .v{color:var(--ink)} .stat .v.gold{color:var(--champ)} .stat .v.live{color:var(--bench)}
+  .hero{color:var(--dim)} .conn{color:var(--dim)}
+  select,button{background:var(--raised);color:var(--ink);border-color:var(--line)}
+  .ghost{background:transparent;color:var(--dim)}
+  .hd button,.win-h{color:var(--dim)}
+  button.run:hover,.cands .forge:hover{background:var(--gold-deep);color:#1a1304}
+  .funnel{background:var(--panel2)} .fstep .arrow{color:var(--line2)}
+  .fstep .n{color:var(--ink)} .fstep .lab,.fstep .lab b{color:var(--dim)}
+  .fstep.gen .n{color:var(--dim)} .fstep.comp .n{color:var(--compile)} .fstep.ver .n{color:var(--test)} .fstep.fast .n{color:var(--pass)} .fstep.champ .n{color:var(--champ)}
+  .card{background:var(--panel);box-shadow:none}
+  .hd{background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)} .hd h2{color:var(--dim)} .hd .sub{color:var(--faint)}
+  .cell{color:var(--txt)} .cell .id{color:var(--dim);opacity:.7}
+  .cell.crashed{background:var(--crash);color:#1c1200} .cell.crashed .id{color:#1c1200}
+  .legend{color:var(--dim)}
+  .feed{color:var(--txt)} .line{border-bottom:1px solid var(--line)} .line .ic{color:var(--faint)} .line .tx{color:var(--txt)} .line .rd{color:var(--faint)}
+  .line.champ{background:rgba(245,158,11,.10)} .line.champ .tx,.line.champ .ic{color:var(--gold)}
+  .line.crash .tx{color:var(--compile)} .line.crash .ic{color:var(--crash)} .line.pass .tx,.line.pass .ic{color:var(--pass)}
+  .line.stage .tx{color:var(--dim)} .line.round .tx{color:var(--ink)} .line.end{background:rgba(255,255,255,.03)} .line.end .tx{color:var(--dim)}
+  .diffbanner{background:linear-gradient(90deg,rgba(245,158,11,.08),transparent);border-left:2px solid var(--champ)}
+  .delta .from{color:var(--faint)} .delta .to{color:var(--champ)} .delta .gain{color:var(--pass)} .why{color:var(--dim)} .why b{color:var(--ink)}
+  .seg button{background:transparent;color:var(--dim)} .seg button.on{background:var(--raised);color:var(--ink)}
+  pre.code{color:var(--txt)} .dl .g{color:#5a6a82} .dl.del{color:var(--delln)}
+  .code .kw{color:#7aa2ff} .code .ty{color:#5ad6c0} .code .mac{color:#e6a35a} .code .fn{color:#f0c674} .code .num{color:#d19a66} .code .cm{color:#5a6678} .code .str{color:#9ece6a}
+  .node .bar{background:#2A3445;border:1px solid var(--line2)} .conn-line{color:var(--line2)}
+  thead th{background:var(--panel2);color:var(--faint)} tbody td{border-bottom:1px solid var(--line);color:var(--txt)}
+  .pill.keep{background:#0c3a20;color:#5ee08a} .pill.discard{background:#3a1414;color:#ff9a9a} .pill.crash{background:#3a2a0c;color:#f0c074}
+  @keyframes rowflash{from{background:rgba(245,158,11,.12)}to{background:transparent}}
+  .badge-hack{color:#FCA5A5;border:1px solid #5a2030}
+  .land-input input{background:var(--panel);color:var(--ink);border-color:var(--line)}
+  .land-input input:focus{border-color:var(--champ);box-shadow:0 0 0 3px rgba(245,158,11,.18)}
+  .chip{background:var(--panel);color:var(--dim)}
+  .an-scan{background:#0E141C;color:var(--dim)}
+  .an-title{color:var(--dim)} .an-title span{color:var(--gold)}
+  table.cands td{border-bottom:1px solid var(--line)} table.cands tr.top{background:rgba(245,158,11,.06)} table.cands tbody tr:hover{background:rgba(255,255,255,.03)}
+  .sig{border:1px solid var(--line);color:var(--dim);background:rgba(255,255,255,.025)} .sig.on{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4);color:#86EFAC}
+  .scorebar{background:#1B2230}
+  .fnname{color:var(--ink)} .fnfile{color:var(--dim)}
+  ::-webkit-scrollbar-thumb{background:#2A3445}
+
+/* ============================================================
+   RUSTFORGE — FINAL CONSOLIDATED SYSTEM (editorial-mono / instrument)
+   ONE token set + component rules, last so it wins the cascade over all
+   six accreted layers above. Deep navy + gold, no glow, mono-first,
+   tabular numerics, dual-coded a11y.
+   ============================================================ */
+:root{
+  --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --raised:#161c27;
+  --line:#1d2535; --line2:#2c3a55;
+  --ink:#e7ecf5; --txt:#c3ccdb; --dim:#8e9bb1; --faint:#5a6678;
+  --gold:#fbbf24; --gold-hi:#ffd166; --gold-deep:#b07e10; --champ:#fbbf24;
+  --queued:#232c3b; --spawn:#5b8cff; --compile:#e0913a; --test:#a855f7;
+  --bench:#22b8c8; --pass:#22c55e; --fail:#ef4444; --crash:#9c5a24;
+  --add:rgba(34,197,94,.10); --addln:#5fdd9b; --del:rgba(239,68,68,.10); --delln:#ff8a98;
+  --lift:0 14px 34px -22px rgba(0,0,0,.6);
+  --display:"Space Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,"Cascadia Code",Consolas,monospace;
+}
+*{text-shadow:none}
+html,body{background:var(--bg)}
+body{color:var(--txt);font-family:var(--sans);font-size:14px;text-rendering:optimizeLegibility}
+b{font-weight:600;color:var(--ink)}
+
+/* header */
+header{background:linear-gradient(180deg,#0e1320,var(--bg));border-bottom:1px solid var(--line)}
+.logo{font-family:var(--display);font-weight:700;letter-spacing:-.01em;font-size:19px;color:var(--ink)}
+.logo b{color:var(--gold)}
+.tag{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:4px 12px}
+.stat .v{font-family:var(--mono);font-weight:600;font-size:21px;color:var(--ink);font-variant-numeric:tabular-nums}
+.stat .v.gold{color:var(--gold)} .stat .v.live{color:var(--bench)}
+.stat .l{font-size:9.5px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.hero{font-family:var(--mono);font-weight:500;font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+.hero b{color:var(--gold);font-size:21px;font-weight:600}
+select,button{font-family:var(--sans);font-weight:500;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;transition:border-color .15s,filter .15s}
+button:hover,select:hover{border-color:var(--line2)}
+button.run,.cands .forge{background:var(--gold);color:#1a1500;border:1px solid var(--gold);font-weight:700;box-shadow:none}
+button.run:hover,.cands .forge:hover{filter:brightness(1.06);background:var(--gold);border-color:var(--gold);color:#1a1500}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--dim)}
+.conn{color:var(--dim)} .dot{background:var(--faint);border-radius:999px}
+.dot.sim{background:var(--compile);box-shadow:none} .dot.liveok{background:var(--pass);box-shadow:none}
+
+/* funnel ledger */
+.funnel{background:var(--panel2);border-bottom:1px solid var(--line);padding:9px 20px}
+.fstep{padding:2px 16px;gap:3px} .fstep+.fstep{border-left:1px solid var(--line)}
+.fstep .n{font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.fstep .lab{font-size:10px;letter-spacing:.10em;color:var(--dim)} .fstep .lab b{color:var(--ink)}
+.fstep .arrow{color:var(--line2)}
+.fstep.gen .n{color:var(--dim)} .fstep.comp .n{color:var(--compile)} .fstep.ver .n{color:var(--test)}
+.fstep.fast .n{color:var(--pass)} .fstep.champ .n{color:var(--gold)}
+.fstep .sub{display:block;font-size:10px;color:var(--dim)}
+.fstep .sub .bad{color:var(--fail)}
+
+/* cards / heads */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:none}
+#board > .card{box-shadow:none} #board > .card.dragging{outline:2px solid var(--line2);outline-offset:-2px}
+.hd{background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);border-bottom:1px solid var(--line);padding:10px 15px}
+.hd h2{font-family:var(--display);font-weight:600;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.hd .sub{font-family:var(--mono);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* swarm grid (HERO) */
+.swarm-wrap{padding:14px} .grid{gap:7px}
+.cell{aspect-ratio:1/1;border-radius:6px;background:var(--queued);border:1px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);font-family:var(--mono);color:var(--txt);transition:background .25s,transform .12s}
+.cell .id{color:var(--dim);opacity:.82;font-size:7.5px}
+.cell .sp{font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.cell.spawning{background:var(--spawn);color:#fff}
+.cell.compiling{background:var(--compile);color:#241a05}
+.cell.testing{background:var(--test);color:#fff}
+.cell.benchmarking{background:var(--bench);color:#042427}
+.cell.passed{background:var(--pass);color:#04230f} .cell.passed .id{color:#04230f}
+.cell.failed{background:var(--fail);color:#fff} .cell.failed .id{color:#fff}
+.cell.crashed{background:var(--crash);border:1px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);color:#f0e2d2}
+.cell.crashed .id{color:#f0e2d2}
+.cell.champion{background:var(--gold);color:#1a1500;box-shadow:inset 0 0 0 2px rgba(255,255,255,.9);transform:scale(1.05);z-index:2}
+.cell.champion .id{color:#1a1500}
+.cell.active{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.72}50%{opacity:1}}
+.legend{gap:11px;font-size:10px;color:var(--dim)} .legend i{border-radius:3px}
+
+/* narration feed */
+.feed{font-family:var(--mono);color:var(--txt)}
+.line{border-bottom:1px solid rgba(255,255,255,.035);padding:5px 15px} .line .ic{color:var(--faint)}
+.line .tx{color:var(--txt)} .line .rd{color:var(--dim);font-variant-numeric:tabular-nums}
+.line.champ{background:rgba(251,191,36,.06)} .line.champ .tx,.line.champ .ic{color:var(--gold)}
+.line.hack .tx,.line.hack .ic{color:var(--delln)} .line.crash .tx{color:#cf8c52} .line.crash .ic{color:var(--crash)}
+.line.pass .tx,.line.pass .ic{color:var(--pass)} .line.stage .tx{color:var(--dim)} .line.round .tx{color:var(--ink)}
+.line.end{background:rgba(255,255,255,.025)} .line.end .tx{color:var(--dim)}
+
+/* champion diff */
+.diffbanner{background:linear-gradient(90deg,rgba(251,191,36,.07),transparent);border-bottom:1px solid var(--line);border-left:2px solid var(--gold);padding:11px 15px;gap:14px}
+.delta{font-family:var(--mono);font-size:16px;font-variant-numeric:tabular-nums}
+.delta .from{color:var(--faint)} .delta .to{color:var(--gold)} .delta .gain{color:var(--pass)}
+.why{font-size:12px;color:var(--dim);line-height:1.45} .why b{color:var(--ink)}
+.seg{border:1px solid var(--line);border-radius:8px}
+.seg button{background:transparent;color:var(--dim);font-size:10.5px;padding:6px 11px;border-radius:0}
+.seg button.on{background:var(--raised);color:var(--ink)}
+pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.62}
+.dl .g{width:24px;color:#5a6a82}
+.dl.add{background:var(--add);box-shadow:inset 2px 0 0 var(--pass)} .dl.add .g{color:var(--addln)}
+.dl.del{background:var(--del);box-shadow:inset 2px 0 0 var(--fail);color:var(--delln)} .dl.del .g{color:var(--delln)}
+.code .kw{color:#7aa2ff} .code .ty{color:#5ad6c0} .code .mac{color:#e6a35a}
+.code .fn{color:#f0c674} .code .num{color:#d19a66} .code .str{color:#9ece6a} .code .cm{color:var(--faint);font-style:italic}
+
+/* lineage ratchet */
+.node .bar{width:36px;background:linear-gradient(180deg,#33405a,#1b2434);border:1px solid var(--line2);border-radius:5px 5px 0 0}
+.node.on .bar{background:linear-gradient(180deg,var(--gold),var(--gold-deep));border-color:var(--gold)}
+.node .sp{font-family:var(--mono);font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums} .node.on .sp{color:var(--gold)}
+.node .desc,.node .rnd{color:var(--dim)} .conn-line{color:var(--line2)}
+
+/* journal */
+table{font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+thead th{background:var(--panel2);color:var(--dim);letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--line);padding:8px 13px}
+tbody td{border-bottom:1px solid rgba(255,255,255,.035);color:var(--txt);padding:7px 13px}
+tbody td.desc{color:var(--dim)}
+.pill{font-family:var(--sans);font-size:9px;letter-spacing:.06em;text-transform:uppercase;border-radius:5px;padding:3px 8px}
+.pill.keep{background:rgba(34,197,94,.14);color:var(--pass)}
+.pill.discard{background:rgba(239,68,68,.13);color:var(--fail)}
+.pill.crash{background:rgba(156,90,36,.18);color:#cf8c52}
+.rh{color:var(--delln)} .badge-hack{color:#FCA5A5;border:1px solid #5a2030;border-radius:5px}
+tbody tr.flash{animation:rowflash 1s ease} @keyframes rowflash{from{background:rgba(251,191,36,.10)}to{background:transparent}}
+
+/* landing + analysis */
+.screen{background:radial-gradient(900px 460px at 50% -4%,rgba(251,191,36,.05),transparent 62%),linear-gradient(180deg,#10151d,var(--bg))}
+#landing,#analysis{background:transparent}
+.logo.big{font-size:46px;letter-spacing:-.01em;margin-bottom:14px}
+.land-sub{color:var(--dim);font-size:15px;max-width:600px;margin:0 auto 30px;line-height:1.6} .land-sub b{color:var(--ink)}
+.land-input input{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;max-width:540px;padding:14px 16px}
+.land-input input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(251,191,36,.16)}
+.chip{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:6px 13px}
+.chip:hover{border-color:var(--gold);color:var(--ink)}
+.an-repo{font-family:var(--mono);color:var(--gold)}
+.an-scan{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:14px 16px;line-height:1.7}
+.an-title{font-family:var(--display);letter-spacing:.12em;color:var(--dim)} .an-title span{color:var(--gold)}
+table.cands th{color:var(--dim);border-bottom:1px solid var(--line)}
+table.cands td{border-bottom:1px solid var(--line);padding:16px 13px} table.cands tr.top{background:rgba(251,191,36,.05)}
+table.cands tbody tr:hover{background:rgba(255,255,255,.025)}
+.fnname{font-family:var(--mono);color:var(--ink);font-size:14px} .fnfile{font-family:var(--mono);color:var(--dim);font-size:11px}
+.sig{border:1px solid var(--line2);color:var(--dim);border-radius:5px;text-transform:uppercase;letter-spacing:.04em}
+.sig.on{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4);color:#86EFAC}
+.scorebar{background:#1B2230;border-radius:8px} .scorebar i{background:linear-gradient(90deg,#36425a,var(--bench))}
+.cands .forge{border-radius:8px;padding:8px 15px}
+
+/* bento window chrome */
+.win-btn{background:var(--raised);border:1px solid var(--line);color:var(--dim);border-radius:5px}
+.win-btn:hover{border-color:var(--line2);color:var(--ink)}
+.win-rsz::after{border-right:2px solid var(--line2);border-bottom:2px solid var(--line2)}
+#board > .card:hover .win-rsz::after,#board > .card.resizing .win-rsz::after{border-color:var(--dim)}
+::-webkit-scrollbar-thumb{background:#2a3445;border:2px solid var(--panel);border-radius:6px} ::-webkit-scrollbar-track{background:transparent}
+
+/* AA: promote sub-12px labels off --faint onto --dim */
+.stat .l,.fstep .lab,.fstep .sub,.node .desc,.node .rnd,.fnfile,.hd .sub,.line .rd,thead th,table.cands th{color:var(--dim)}
+</style>
+</head>
+<body>
+<!-- ================= LANDING — paste a GitHub repo ================= -->
+<section id="landing" class="screen">
+  <div class="land-card">
+    <div class="logo big">RUST<b>FORGE</b></div>
+    <div class="land-sub">Point it at a GitHub repo. A 50-wide Modal swarm finds its hottest Python function and rewrites it as <b style="color:#cdd6e6">verified-faster Rust</b> — provably equivalent, measurably faster.</div>
+    <div class="land-input">
+      <input id="repoUrl" type="text" spellcheck="false" placeholder="https://github.com/owner/repo" value="https://github.com/karpathy/micrograd" />
+      <button id="analyzeBtn" class="run">Analyze repo →</button>
+    </div>
+    <div class="land-examples"><span>try:</span>
+      <button class="chip" data-url="https://github.com/karpathy/micrograd">karpathy/micrograd</button>
+      <button class="chip" data-url="https://github.com/karpathy/nanoGPT">karpathy/nanoGPT</button>
+      <button class="chip" data-url="https://github.com/demo/mandelbrot">demo/mandelbrot</button>
+    </div>
+  </div>
+</section>
+<!-- ================= ANALYSIS — Swarm A ranks functions ================= -->
+<section id="analysis" class="screen" style="display:none">
+  <div class="an-head">
+    <div class="logo">RUST<b>FORGE</b></div>
+    <div class="an-repo" id="anRepo">owner/repo</div>
+    <span style="flex:1"></span>
+    <button id="backBtn" class="ghost">← change repo</button>
+  </div>
+  <div class="an-body">
+    <div class="an-scan" id="anScan"></div>
+    <div class="an-list" id="anList" style="display:none">
+      <div class="an-title">Functions worth optimizing <span id="anCount"></span> — pick one to forge</div>
+      <table class="cands"><thead><tr><th>Function</th><th>Signals</th><th>Optimization score</th><th>Est. speedup</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+<div class="app" id="app" style="display:none">
+  <header>
+    <div class="logo">RUST<b>FORGE</b></div>
+    <div class="tag" id="targetTag">target: micrograd · Value.backward</div>
+    <button id="newRepoBtn" class="ghost" title="analyze a different repo">↩ repo</button>
+    <div class="hero">baseline <b id="hBase">1.0×</b> &nbsp;→&nbsp; champion <b id="hBest">1.0×</b></div>
+    <div class="spacer"></div>
+    <div class="stat"><div class="v" id="sRound">0</div><div class="l">round</div></div>
+    <div class="stat"><div class="v live" id="sLive">0</div><div class="l">containers live</div></div>
+    <div class="stat"><div class="v" id="sAtt">0</div><div class="l">attempts</div></div>
+    <select id="targetSel" title="demo target">
+      <option value="micrograd">micrograd (autograd backward pass)</option>
+      <option value="mandelbrot">Mandelbrot (escape-time loop)</option>
+    </select>
+    <button class="ghost" id="snapBtn" title="re-tile panels to the default grid (keeps your order)">⊞ Snap to grid</button>
+    <button class="run" id="runBtn">▶ Run swarm</button>
+    <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">connecting…</span></div>
+  </header>
+
+  <!-- PROCESS FUNNEL (descriptive pipeline) -->
+  <div class="funnel" id="funnel">
+    <div class="fstep gen"><div class="n" id="fGen">0</div><div class="lab"><b>1</b> Generate · LLM mutates Rust</div><span class="arrow">▶</span></div>
+    <div class="fstep comp"><div class="n" id="fComp">0</div><div class="lab"><b>2</b> Compile · maturin --release</div><div class="sub"><span class="bad" id="fCrash">0</span> compile errors</div><span class="arrow">▶</span></div>
+    <div class="fstep ver"><div class="n" id="fVer">0</div><div class="lab"><b>3</b> Verify · differential gate rtol=1e-6</div><div class="sub"><span class="bad" id="fHack">0</span> reward-hacks caught</div><span class="arrow">▶</span></div>
+    <div class="fstep fast"><div class="n" id="fFast">0</div><div class="lab"><b>4</b> Benchmark · faster than champ</div><span class="arrow">▶</span></div>
+    <div class="fstep champ"><div class="n" id="fChamp">0</div><div class="lab"><b>5</b> Keep · new champion</div></div>
+  </div>
+
+  <main>
+    <div class="col left">
+      <!-- SWARM -->
+      <section class="card">
+        <div class="hd"><h2>Swarm · Modal containers</h2><span class="sub grow" id="swarmSub">round 0 — idle</span><span class="sub">compile · fuzz · bench</span></div>
+        <div class="body swarm-wrap">
+          <div class="grid" id="grid"></div>
+          <div class="legend">
+            <span><i style="background:var(--spawn)"></i>spawn</span><span><i style="background:var(--compile)"></i>compile</span>
+            <span><i style="background:var(--test)"></i>fuzz-verify</span><span><i style="background:var(--bench)"></i>bench</span>
+            <span><i style="background:var(--pass)"></i>correct+faster</span><span><i style="background:var(--fail)"></i>rejected</span>
+            <span><i style="background:var(--crash)"></i>compile err</span><span><i style="background:var(--champ)"></i>champion</span>
+          </div>
+        </div>
+      </section>
+      <!-- NARRATION -->
+      <section class="card">
+        <div class="hd"><h2>Process · live</h2><span class="sub grow"></span><span class="sub">plain-English play-by-play</span></div>
+        <div class="body"><div class="feed" id="feed"></div></div>
+      </section>
+    </div>
+
+    <div class="col right">
+      <!-- CHAMPION DIFF (the point: clear code improvements) -->
+      <section class="card">
+        <div class="hd"><h2>Improvement · src/lib.rs</h2><span class="sub grow" id="diffTitle">waiting for first champion…</span>
+          <div class="seg"><button id="segDiff" class="on">Diff</button><button id="segFull">Full file</button></div></div>
+        <div class="diffbanner" id="diffBanner" style="display:none">
+          <div class="delta"><span class="from" id="dFrom">1.0×</span> → <span class="to" id="dTo">1.0×</span><span class="gain" id="dGain"></span></div>
+          <div class="why" id="dWhy"></div>
+        </div>
+        <div class="body"><pre class="code" id="code"><span class="cm">// the swarm hasn't crowned a champion yet — hit ▶ Run swarm</span></pre></div>
+      </section>
+      <!-- LINEAGE RATCHET -->
+      <section class="card">
+        <div class="hd"><h2>Champion lineage · keep/discard ratchet</h2><span class="sub grow"></span><span class="sub">click a step to inspect its change</span></div>
+        <div class="lineage" id="lineage"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- JOURNAL -->
+  <section class="card" style="margin:0 11px 11px;min-height:0">
+    <div class="hd"><h2>Autoresearch journal</h2><span class="sub">id · speedup · status · description &nbsp;(keep-if-faster · fitness = 0 on any correctness failure)</span></div>
+    <div class="body"><table><thead><tr><th style="width:60px">id</th><th style="width:86px">speedup</th><th style="width:84px">status</th><th>description</th></tr></thead><tbody id="journal"></tbody></table></div>
+  </section>
+</div>
+
+<script>
+/* ============================================================================
+   EVENT SCHEMA — contract between the Modal swarm and this dashboard.
+   The backend (ui/server.py push_event, fed by evolve.py) emits these over
+   ws://<host>/ws. The simulator below emits the EXACT same objects.
+     {type:"round_start", round, target, n_cells}
+     {type:"cell_update", round, cell, status, model}
+     {type:"cell_result", round, cell, passed, speedup, status, description, reward_hack}
+     {type:"champion",    round, speedup, code, description, why, cell}   // code/why drive the diff
+     {type:"journal",     id, speedup, status, description, reward_hack}
+     {type:"round_end",   round, best_speedup, kept}
+   Narration + the funnel are DERIVED client-side from these — no extra events.
+   ============================================================================ */
+const N=50, $=s=>document.querySelector(s);
+const state={round:0,best:1.0,attempts:0,target:'micrograd',
+  lineage:[], prevCode:'', funnel:{}, announced:new Set(), jid:0};
+
+/* ---- champion code sequences (the visible improvements). Each step differs
+   from the previous by a few lines so the diff is meaningful. ---- */
+const SEQ={
+  micrograd:[
+   {sp:1.0,desc:'seed naive port — Rc/RefCell Value graph',why:'Literal translation of micrograd — every <b>Value</b> is an <b>Rc&lt;RefCell&gt;</b> graph node, topo sort uses a <b>HashSet</b>. Correct, but pointer-chasing and allocation dominate.',code:
+`use pyo3::prelude::*;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::collections::HashSet;
+
+type Ref = Rc<RefCell<Node>>;
+struct Node { data: f64, grad: f64, dl: f64, dr: f64, lhs: Option<Ref>, rhs: Option<Ref> }
+
+fn build_topo(v: &Ref, topo: &mut Vec<Ref>, seen: &mut HashSet<*const RefCell<Node>>) {
+    if !seen.insert(Rc::as_ptr(v)) { return; }
+    let n = v.borrow();
+    if let Some(l) = &n.lhs { build_topo(l, topo, seen); }   // recurse into parents
+    if let Some(r) = &n.rhs { build_topo(r, topo, seen); }
+    topo.push(Rc::clone(v));
+}
+
+#[pyfunction]
+fn backward(root: &Ref) {
+    let mut topo: Vec<Ref> = Vec::new();
+    let mut seen: HashSet<*const RefCell<Node>> = HashSet::new();
+    build_topo(root, &mut topo, &mut seen);
+    root.borrow_mut().grad = 1.0;
+    for node in topo.iter().rev() {                          // reverse-mode sweep
+        let n = node.borrow();
+        let go = n.grad;
+        if let Some(l) = &n.lhs { l.borrow_mut().grad += n.dl * go; }   // chain rule
+        if let Some(r) = &n.rhs { r.borrow_mut().grad += n.dr * go; }
+    }
+}`},
+   {sp:9.2,desc:'flat arena tape — drop the Rc graph',why:'Replace the <b>Rc&lt;RefCell&gt;</b> graph with a flat <b>arena/tape</b> of nodes indexed by <b>usize</b>. No per-node allocation, no refcount churn, no <code>borrow()</code> in the hot loop.',code:
+`use pyo3::prelude::*;
+use std::collections::HashSet;
+
+struct Tape {
+    data: Vec<f64>, grad: Vec<f64>,
+    dl: Vec<f64>, dr: Vec<f64>,                              // cached local derivatives
+    lhs: Vec<isize>, rhs: Vec<isize>,                        // parent indices, -1 = none
+}
+
+fn build_topo(t: &Tape, v: usize, topo: &mut Vec<usize>, seen: &mut HashSet<usize>) {
+    if !seen.insert(v) { return; }
+    let (l, r) = (t.lhs[v], t.rhs[v]);
+    if l >= 0 { build_topo(t, l as usize, topo, seen); }     // recurse into parents
+    if r >= 0 { build_topo(t, r as usize, topo, seen); }
+    topo.push(v);
+}
+
+#[pyfunction]
+fn backward(t: &mut Tape, root: usize) {
+    let mut topo: Vec<usize> = Vec::new();
+    let mut seen: HashSet<usize> = HashSet::new();
+    build_topo(t, root, &mut topo, &mut seen);
+    t.grad[root] = 1.0;
+    for idx in topo.iter().rev() {                           // reverse-mode sweep
+        let i = *idx; let go = t.grad[i];
+        let (l, r) = (t.lhs[i], t.rhs[i]);
+        if l >= 0 { t.grad[l as usize] += t.dl[i] * go; }    // chain rule, by index
+        if r >= 0 { t.grad[r as usize] += t.dr[i] * go; }
+    }
+}`},
+   {sp:27.5,desc:'visited bitset + Vec — drop the HashMap',why:'The topo sort hashed every node into a <b>HashSet</b>. Swap it for a flat <b>visited bitset</b> (one <code>bool</code> per index) and a pre-sized <b>Vec</b> — no hashing, no rehash growth.',code:
+`use pyo3::prelude::*;
+
+struct Tape {
+    data: Vec<f64>, grad: Vec<f64>,
+    dl: Vec<f64>, dr: Vec<f64>,                              // cached local derivatives
+    lhs: Vec<isize>, rhs: Vec<isize>,                        // parent indices, -1 = none
+}
+
+fn build_topo(t: &Tape, v: usize, topo: &mut Vec<usize>, seen: &mut [bool]) {
+    if seen[v] { return; }
+    seen[v] = true;
+    let (l, r) = (t.lhs[v], t.rhs[v]);
+    if l >= 0 { build_topo(t, l as usize, topo, seen); }     // recurse into parents
+    if r >= 0 { build_topo(t, r as usize, topo, seen); }
+    topo.push(v);
+}
+
+#[pyfunction]
+fn backward(t: &mut Tape, root: usize) {
+    let n = t.data.len();
+    let mut topo: Vec<usize> = Vec::with_capacity(n);        // pre-sized, no regrow
+    let mut seen = vec![false; n];                           // bitset, not a HashSet
+    build_topo(t, root, &mut topo, &mut seen);
+    t.grad[root] = 1.0;
+    for idx in topo.iter().rev() {                           // reverse-mode sweep
+        let i = *idx; let go = t.grad[i];
+        let (l, r) = (t.lhs[i], t.rhs[i]);
+        if l >= 0 { t.grad[l as usize] += t.dl[i] * go; }    // chain rule, by index
+        if r >= 0 { t.grad[r as usize] += t.dr[i] * go; }
+    }
+}`},
+   {sp:54.8,desc:'unsafe get_unchecked in the backward loop',why:'Every tape access in the sweep is provably in-bounds. Drop the bounds checks with <b>get_unchecked</b> so the loop is pure arithmetic.',code:
+`use pyo3::prelude::*;
+
+struct Tape {
+    data: Vec<f64>, grad: Vec<f64>,
+    dl: Vec<f64>, dr: Vec<f64>,                              // cached local derivatives
+    lhs: Vec<isize>, rhs: Vec<isize>,                        // parent indices, -1 = none
+}
+
+fn build_topo(t: &Tape, v: usize, topo: &mut Vec<usize>, seen: &mut [bool]) {
+    if seen[v] { return; }
+    seen[v] = true;
+    let (l, r) = (t.lhs[v], t.rhs[v]);
+    if l >= 0 { build_topo(t, l as usize, topo, seen); }     // recurse into parents
+    if r >= 0 { build_topo(t, r as usize, topo, seen); }
+    topo.push(v);
+}
+
+#[pyfunction]
+fn backward(t: &mut Tape, root: usize) {
+    let n = t.data.len();
+    let mut topo: Vec<usize> = Vec::with_capacity(n);        // pre-sized, no regrow
+    let mut seen = vec![false; n];                           // bitset, not a HashSet
+    build_topo(t, root, &mut topo, &mut seen);
+    t.grad[root] = 1.0;
+    for idx in topo.iter().rev() {                           // reverse-mode sweep
+        let i = *idx;
+        unsafe {
+            let go = *t.grad.get_unchecked(i);               // no bounds check
+            let (l, r) = (*t.lhs.get_unchecked(i), *t.rhs.get_unchecked(i));
+            if l >= 0 { *t.grad.get_unchecked_mut(l as usize) += t.dl.get_unchecked(i) * go; }
+            if r >= 0 { *t.grad.get_unchecked_mut(r as usize) += t.dr.get_unchecked(i) * go; }
+        }
+    }
+}`},
+   {sp:88.0,desc:'contiguous grad buffer + fused chain-rule',why:'Hold the grad buffer as one <b>contiguous raw pointer</b> and <b>fuse</b> the two chain-rule multiply-adds into a single branchless pass — the fully optimized autograd kernel.',code:
+`use pyo3::prelude::*;
+
+struct Tape {
+    data: Vec<f64>, grad: Vec<f64>,
+    dl: Vec<f64>, dr: Vec<f64>,                              // cached local derivatives
+    lhs: Vec<isize>, rhs: Vec<isize>,                        // parent indices, -1 = none
+}
+
+fn build_topo(t: &Tape, v: usize, topo: &mut Vec<usize>, seen: &mut [bool]) {
+    if seen[v] { return; }
+    seen[v] = true;
+    let (l, r) = (t.lhs[v], t.rhs[v]);
+    if l >= 0 { build_topo(t, l as usize, topo, seen); }     // recurse into parents
+    if r >= 0 { build_topo(t, r as usize, topo, seen); }
+    topo.push(v);
+}
+
+#[pyfunction]
+fn backward(t: &mut Tape, root: usize) {
+    let n = t.data.len();
+    let mut topo: Vec<usize> = Vec::with_capacity(n);        // pre-sized, no regrow
+    let mut seen = vec![false; n];                           // bitset, not a HashSet
+    build_topo(t, root, &mut topo, &mut seen);
+    let g = t.grad.as_mut_ptr();                             // one contiguous buffer
+    unsafe { *g.add(root) = 1.0; }
+    for idx in topo.iter().rev() {                           // reverse-mode sweep
+        let i = *idx;
+        unsafe {
+            let go = *g.add(i);                              // fused chain rule:
+            let (l, r) = (*t.lhs.get_unchecked(i), *t.rhs.get_unchecked(i));
+            *g.add((l & ((l >> 63) ^ -1)) as usize) += t.dl.get_unchecked(i) * go * (l >= 0) as i64 as f64;
+            *g.add((r & ((r >> 63) ^ -1)) as usize) += t.dr.get_unchecked(i) * go * (r >= 0) as i64 as f64;
+        }
+    }
+}`},
+  ],
+  mandelbrot:[
+   {sp:1.0,desc:'seed escape-time loop',why:'Per-pixel escape-time, single thread.',code:
+`#[pyfunction]
+fn mandel<'py>(py: Python<'py>, w: usize, h: usize, max_it: u32)
+        -> Bound<'py, PyArray2<u32>> {
+    let mut out = Array2::<u32>::zeros((h, w));
+    for y in 0..h { for x in 0..w {
+        let (cx, cy) = px_to_c(x, y, w, h);
+        let (mut zx, mut zy) = (0.0f64, 0.0f64);
+        let mut n = 0;
+        while zx*zx + zy*zy <= 4.0 && n < max_it {
+            let t = zx*zx - zy*zy + cx; zy = 2.0*zx*zy + cy; zx = t; n += 1;
+        }
+        out[[y, x]] = n;
+    }}
+    out.into_pyarray(py)
+}`},
+   {sp:6.0,desc:'rayon par_chunks over rows',why:'Each scanline renders on its own core via <b>par_chunks_mut</b>.',code:
+`use rayon::prelude::*;
+#[pyfunction]
+fn mandel<'py>(py: Python<'py>, w: usize, h: usize, max_it: u32)
+        -> Bound<'py, PyArray2<u32>> {
+    let mut buf = vec![0u32; w * h];
+    buf.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+        for x in 0..w {
+            let (cx, cy) = px_to_c(x, y, w, h);
+            let (mut zx, mut zy) = (0.0f64, 0.0f64);
+            let mut n = 0;
+            while zx*zx + zy*zy <= 4.0 && n < max_it {
+                let t = zx*zx - zy*zy + cx; zy = 2.0*zx*zy + cy; zx = t; n += 1;
+            }
+            row[x] = n;
+        }
+    });
+    Array2::from_shape_vec((h, w), buf).unwrap().into_pyarray(py)
+}`},
+   {sp:18.0,desc:'reuse z² terms',why:'Track x² and y² and reuse them — <b>3 multiplies per iteration</b> instead of 5.',code:
+`        for x in 0..w {
+            let (cx, cy) = px_to_c(x, y, w, h);
+            let (mut zx, mut zy) = (0.0f64, 0.0f64);
+            let (mut x2, mut y2) = (0.0f64, 0.0f64);
+            let mut n = 0;
+            while x2 + y2 <= 4.0 && n < max_it {
+                zy = 2.0*zx*zy + cy;
+                zx = x2 - y2 + cx;
+                x2 = zx*zx; y2 = zy*zy;          // reuse squares
+                n += 1;
+            }
+            row[x] = n;
+        }`},
+   {sp:34.0,desc:'cardioid + bulb early-out',why:'Analytic test skips the two biggest interior regions <b>instantly</b> (no iteration).',code:
+`        for x in 0..w {
+            let (cx, cy) = px_to_c(x, y, w, h);
+            let q = (cx - 0.25).powi(2) + cy*cy;                 // main cardioid
+            let in_bulb = (cx + 1.0).powi(2) + cy*cy <= 0.0625;  // period-2 bulb
+            if q*(q + (cx - 0.25)) <= 0.25*cy*cy || in_bulb { row[x] = max_it; continue; }
+            let (mut zx, mut zy, mut x2, mut y2, mut n) = (0.0,0.0,0.0,0.0,0);
+            while x2 + y2 <= 4.0 && n < max_it {
+                zy = 2.0*zx*zy + cy; zx = x2 - y2 + cx; x2 = zx*zx; y2 = zy*zy; n += 1;
+            }
+            row[x] = n;
+        }`},
+   {sp:52.0,desc:'f64x8 SIMD over 8 pixels',why:'Eight horizontal pixels share one lane-masked escape-time loop (<b>f64x8</b>).',code:
+`use std::simd::{f64x8, u32x8, cmp::SimdPartialOrd, num::SimdFloat};
+        let mut x = 0;
+        while x + 8 <= w {
+            let cx = f64x8::from_array(std::array::from_fn(|l| px_x(x + l, w)));
+            let cy = f64x8::splat(px_y(y, h));
+            let (mut zx, mut zy) = (f64x8::splat(0.0), f64x8::splat(0.0));
+            let mut n = u32x8::splat(0);
+            for _ in 0..max_it {
+                let m = (zx*zx + zy*zy).simd_le(f64x8::splat(4.0));
+                if !m.any() { break; }
+                let t = zx*zx - zy*zy + cx; zy = f64x8::splat(2.0)*zx*zy + cy; zx = t;
+                n += m.select(u32x8::splat(1), u32x8::splat(0));
+            }
+            n.copy_to_slice(&mut row[x..x+8]);
+            x += 8;
+        }`},
+   {sp:88.0,desc:'SIMD + early-out combined',why:'Interior early-out <b>plus</b> f64x8 lanes together — the full optimized kernel.',code:
+`use std::simd::{f64x8, u32x8, mask64x8, cmp::SimdPartialOrd, num::SimdFloat};
+        let mut x = 0;
+        while x + 8 <= w {
+            let cx = f64x8::from_array(std::array::from_fn(|l| px_x(x + l, w)));
+            let cy = f64x8::splat(px_y(y, h));
+            let q  = (cx - f64x8::splat(0.25))*(cx - f64x8::splat(0.25)) + cy*cy;
+            let interior = (q*(q + cx - f64x8::splat(0.25))).simd_le(f64x8::splat(0.25)*cy*cy);
+            let (mut zx, mut zy) = (f64x8::splat(0.0), f64x8::splat(0.0));
+            let mut n = interior.select(u32x8::splat(max_it), u32x8::splat(0));
+            let mut live: mask64x8 = !interior;
+            for _ in 0..max_it {
+                live &= (zx*zx + zy*zy).simd_le(f64x8::splat(4.0));
+                if !live.any() { break; }
+                let t = zx*zx - zy*zy + cx; zy = f64x8::splat(2.0)*zx*zy + cy; zx = t;
+                n += live.cast().select(u32x8::splat(1), u32x8::splat(0));
+            }
+            n.copy_to_slice(&mut row[x..x+8]);
+            x += 8;
+        }`},
+  ],
+};
+
+/* ---- grid ---- */
+const grid=$('#grid'); const ACTIVE=new Set(['spawning','compiling','testing','benchmarking']);
+function buildGrid(){grid.innerHTML='';for(let i=0;i<N;i++){const c=document.createElement('div');c.className='cell';c.id='c'+i;c.innerHTML=`<span class="id">c-${String(i).padStart(2,'0')}</span><span class="sp"></span>`;grid.appendChild(c);}}
+function setCell(i,st,sp){const c=$('#c'+i);if(!c)return;c.className='cell '+st+(ACTIVE.has(st)?' active':'');c.querySelector('.sp').textContent=(st==='passed'||st==='champion')&&sp?sp.toFixed(1)+'×':'';}
+function live(){const n=[...grid.children].filter(c=>[...ACTIVE].some(s=>c.classList.contains(s))).length;$('#sLive').textContent=n;}
+
+/* ---- funnel ---- */
+function resetFunnel(){state.funnel={gen:N,comp:0,ver:0,fast:0,crash:0,hack:0,champ:0};renderFunnel();}
+function renderFunnel(){const f=state.funnel;$('#fGen').textContent=f.gen||0;$('#fComp').textContent=f.comp||0;
+  $('#fVer').textContent=f.ver||0;$('#fFast').textContent=f.fast||0;$('#fChamp').textContent=f.champ||0;
+  $('#fCrash').textContent=f.crash||0;$('#fHack').textContent=f.hack||0;}
+
+/* ---- narration ---- */
+function narrate(txt,cls){const feed=$('#feed');const d=document.createElement('div');d.className='line '+(cls||'');
+  const ic={round:'▸',stage:'⚙',pass:'✓',champ:'★',hack:'✗',crash:'⚠',end:'▣'}[cls]||'·';
+  d.innerHTML=`<span class="ic">${ic}</span><span class="tx">${txt}</span><span class="rd">R${state.round}</span>`;
+  feed.prepend(d); while(feed.children.length>90)feed.removeChild(feed.lastChild);}
+
+/* ---- rust highlight + diff ---- */
+function hl(src){let s=src.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // NOTE: inserted spans use SINGLE-quoted attrs so the double-quote string rule below can't match them
+  s=s.replace(/("(?:[^"\\]|\\.)*")/g,"<span class='str'>$1</span>");
+  s=s.replace(/(\/\/[^\n]*)/g,"<span class='cm'>$1</span>");
+  s=s.replace(/#\[([^\]]*)\]/g,"<span class='mac'>#[$1]</span>");
+  s=s.replace(/\b(fn|let|mut|pub|use|mod|for|in|if|else|unsafe|return|as|impl|self|move|while|continue|break)\b/g,"<span class='kw'>$1</span>");
+  s=s.replace(/\b(f32|f64|u32|usize|i32|i64|u8|Array2|ArrayView2|PyArray2|PyReadonlyArray2|Python|Bound|Vec|Axis|f32x8|f64x8|u32x8|mask64x8)\b/g,"<span class='ty'>$1</span>");
+  s=s.replace(/\b(\d+\.?\d*(?:e-?\d+)?)\b/g,"<span class='num'>$1</span>");
+  s=s.replace(/\b(par_iter|into_par_iter|par_chunks_mut|axis_iter_mut|into_pyarray|as_array|as_slice|uget|dot|mapv|map|collect|enumerate|for_each|splat|from_slice|from_array|reduce_sum|copy_to_slice|select|simd_le|any|zeros|from_shape_vec|powi|max|log10)\b/g,"<span class='fn'>$1</span>");
+  return s;}
+function diffLines(aStr,bStr){const a=(aStr||'').split('\n'),b=bStr.split('\n'),m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},()=>new Int32Array(n+1));
+  for(let i=m-1;i>=0;i--)for(let j=n-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const o=[];let i=0,j=0;
+  while(i<m&&j<n){if(a[i]===b[j]){o.push(['ctx',a[i]]);i++;j++;}else if(dp[i+1][j]>=dp[i][j+1]){o.push(['del',a[i]]);i++;}else{o.push(['add',b[j]]);j++;}}
+  while(i<m)o.push(['del',a[i++]]);while(j<n)o.push(['add',b[j++]]);return o;}
+let viewMode='diff';
+function renderCode(){const cur=state.lineage[state.viewIdx]; if(!cur){return;}
+  const code=$('#code');
+  if(viewMode==='full'||state.viewIdx===0){
+    code.innerHTML=cur.code.split('\n').map(l=>`<span class="dl"><span class="g"> </span>${hl(l)}</span>`).join('\n');
+  }else{
+    const par=state.lineage[state.viewIdx-1];
+    code.innerHTML=diffLines(par.code,cur.code).map(([t,l])=>{
+      const g=t==='add'?'+':t==='del'?'-':' ';return `<span class="dl ${t}"><span class="g">${g}</span>${hl(l)}</span>`;}).join('\n');
+  }}
+function showStep(idx){state.viewIdx=idx;const cur=state.lineage[idx];const par=state.lineage[idx-1];
+  document.querySelectorAll('.node').forEach((n,k)=>n.classList.toggle('on',k===idx));
+  $('#diffTitle').textContent=`round ${cur.round} · ${cur.desc}`;
+  const bn=$('#diffBanner');
+  if(idx>0){bn.style.display='flex';$('#dFrom').textContent=par.sp.toFixed(1)+'×';$('#dTo').textContent=cur.sp.toFixed(1)+'×';
+    $('#dGain').textContent='▲ +'+(cur.sp-par.sp).toFixed(1)+'×';$('#dWhy').innerHTML=cur.why;}
+  else{bn.style.display='none';}
+  renderCode();}
+function renderLineage(){const L=$('#lineage');L.innerHTML='';const maxSp=Math.max(2,...state.lineage.map(x=>x.sp));
+  state.lineage.forEach((c,k)=>{if(k)L.appendChild(Object.assign(document.createElement('div'),{className:'conn-line',textContent:'→'}));
+    const node=document.createElement('div');node.className='node'+(k===state.viewIdx?' on':'');
+    node.innerHTML=`<div class="sp">${c.sp.toFixed(1)}×</div><div class="bar" style="height:${34+78*c.sp/maxSp}px"></div><div class="rnd">R${c.round}</div><div class="desc">${c.desc}</div>`;
+    node.onclick=()=>showStep(k);L.appendChild(node);});}
+
+/* ---- journal ---- */
+function addJournal(r){const tb=$('#journal');const tr=document.createElement('tr');tr.className='flash';
+  const sc=r.status==='keep'?'var(--pass)':r.status==='crash'?'var(--crash)':'var(--fail)';
+  tr.innerHTML=`<td>${String(r.id).padStart(4,'0')}</td><td class="sp" style="color:${sc}">${r.speedup.toFixed(2)}×</td>
+   <td><span class="pill ${r.status}">${r.status}</span></td>
+   <td class="desc">${r.reward_hack?'<span class="rh">'+r.description+'</span><span class="badge-hack">reward-hack caught</span>':r.description}</td>`;
+  tb.prepend(tr);while(tb.children.length>120)tb.removeChild(tb.lastChild);}
+
+/* ---- THE single entry point (live ws OR simulator) ---- */
+function applyEvent(e){
+  switch(e.type){
+    case 'round_start':
+      state.round=e.round;state.target=e.target||state.target;buildGrid();resetFunnel();state.announced=new Set();
+      $('#swarmSub').textContent=`round ${e.round} — spawning ${e.n_cells||N} containers`;$('#sRound').textContent=e.round;
+      narrate(`Round ${e.round} — spawning ${e.n_cells||N} containers across the swarm`,'round');break;
+    case 'cell_update':
+      setCell(e.cell,e.status,0);live();
+      if(!state.announced.has(e.status)){state.announced.add(e.status);
+        if(e.status==='compiling')narrate('compiling candidates — maturin build --release','stage');
+        if(e.status==='testing')narrate('fuzz-verifying — Rust port vs the Python Value engine on 300 random inputs AND weights (rtol=1e-6)','stage');
+        if(e.status==='benchmarking')narrate('benchmarking survivors — median of many runs vs Python','stage');}
+      break;
+    case 'cell_result':
+      state.attempts++;$('#sAtt').textContent=state.attempts;
+      const f=state.funnel;
+      if(e.status==='crashed'){f.crash++;setCell(e.cell,'crashed');
+        if(f.crash<=3)narrate(`c-${String(e.cell).padStart(2,'0')} compile error — ${e.description||'rejected'}`,'crash');}
+      else if(e.reward_hack){f.comp++;f.hack++;setCell(e.cell,'failed');
+        narrate(`c-${String(e.cell).padStart(2,'0')} REJECTED — hardcoded outputs caught by differential fuzz (fitness → 0)`,'hack');}
+      else if(e.passed){f.comp++;f.ver++;setCell(e.cell,'passed',e.speedup);
+        if(e.speedup>state.best){f.fast++;narrate(`c-${String(e.cell).padStart(2,'0')} correct + ${e.speedup.toFixed(1)}× — beats the champion`,'pass');}}
+      live();renderFunnel();break;
+    case 'champion':{
+      state.best=e.speedup;$('#hBest').textContent=e.speedup.toFixed(1)+'×';
+      if(e.cell!=null&&e.cell!==undefined)setCell(e.cell,'champion',e.speedup);
+      const step={round:e.round,sp:e.speedup,desc:e.description||'improvement',why:e.why||'',code:e.code||state.prevCode};
+      state.lineage.push(step);state.prevCode=step.code;state.funnel.champ=1;renderFunnel();
+      renderLineage();showStep(state.lineage.length-1);
+      if(e.round>0)narrate(`NEW CHAMPION c-${e.cell!=null?String(e.cell).padStart(2,'0'):'--'} — ${(state.lineage.length>1?state.lineage[state.lineage.length-2].sp.toFixed(1):'1.0')}× → ${e.speedup.toFixed(1)}× — ${e.description}`,'champ');
+      break;}
+    case 'journal':addJournal({id:e.id||++state.jid,speedup:e.speedup,status:e.status,description:e.description,reward_hack:e.reward_hack});break;
+    case 'round_end':{const f=state.funnel;
+      $('#swarmSub').textContent=`round ${e.round} — ${e.kept?'NEW CHAMPION ':'no improvement '}· best ${e.best_speedup.toFixed(2)}×`;
+      narrate(`Round ${e.round} done — ${f.comp} compiled · ${f.ver} passed fuzz · ${f.hack} reward-hacks caught · best ${e.best_speedup.toFixed(2)}× (${e.kept?'kept':'discarded'})`,'end');break;}
+  }
+}
+
+/* ============================ SIMULATOR ============================ */
+const MODELS=['gpt-4o','claude-sonnet','gemini-2.5','o3-mini','gpt-4o-mini'];
+const CRASHES=['borrow checker E0502','f32/f64 mismatch at .dot()','cannot move out of borrowed','unresolved import ndarray::Zip',"lifetime 'py escapes"];
+let simT=null,running=false;
+const sleep=ms=>new Promise(r=>simT=setTimeout(r,ms));
+function stopSim(){running=false;if(simT)clearTimeout(simT);}
+async function runSim(){
+  stopSim();running=true;
+  const seq=SEQ[state.target]; const T={micrograd:'target: micrograd · Value.backward',mandelbrot:'target: mandelbrot · escape-time loop'}[state.target];
+  state.round=0;state.best=1.0;state.attempts=0;state.lineage=[];state.prevCode='';state.jid=0;
+  $('#journal').innerHTML='';$('#feed').innerHTML='';$('#sAtt').textContent=0;$('#hBest').textContent='1.0×';$('#targetTag').textContent=state.label||T;
+  buildGrid();resetFunnel();
+  applyEvent({type:'journal',id:++state.jid,speedup:1.0,status:'keep',description:'seed naive port (baseline)'});
+  applyEvent({type:'champion',round:0,speedup:seq[0].sp,code:seq[0].code,description:seq[0].desc,why:seq[0].why,cell:null});
+  for(let r=1;running&&r<seq.length;r++){
+    applyEvent({type:'round_start',round:r,target:state.target,n_cells:N});
+    await sleep(250);
+    const peak=seq[r].sp, winner=Math.floor(Math.random()*N), hack=Math.random()<0.75?Math.floor(Math.random()*N):-1;
+    let bestSp=0,bestCell=-1;
+    for(const i of [...Array(N).keys()].sort(()=>Math.random()-0.5)){if(!running)break;setCell(i,'spawning');live();if(Math.random()<0.06)await sleep(16);}
+    await sleep(300);
+    await Promise.all([...Array(N).keys()].map(i=>(async()=>{
+      await new Promise(r2=>setTimeout(r2,Math.random()*1300));if(!running)return;
+      applyEvent({type:'cell_update',round:r,cell:i,status:'compiling'});await new Promise(r2=>setTimeout(r2,480+Math.random()*620));if(!running)return;
+      if(Math.random()<(r<=2?0.32:0.16)){applyEvent({type:'cell_result',round:r,cell:i,passed:false,status:'crashed',speedup:0,description:CRASHES[i%CRASHES.length]});
+        applyEvent({type:'journal',id:++state.jid,speedup:0,status:'crash',description:CRASHES[i%CRASHES.length]});return;}
+      applyEvent({type:'cell_update',round:r,cell:i,status:'testing'});await new Promise(r2=>setTimeout(r2,460+Math.random()*560));if(!running)return;
+      if(i===hack){const msg='hardcoded outputs — passed unit tests, FAILED fuzz';
+        applyEvent({type:'cell_result',round:r,cell:i,passed:false,status:'failed',speedup:0,reward_hack:true,description:msg});
+        applyEvent({type:'journal',id:++state.jid,speedup:0,status:'discard',reward_hack:true,description:msg});return;}
+      applyEvent({type:'cell_update',round:r,cell:i,status:'benchmarking'});await new Promise(r2=>setTimeout(r2,380+Math.random()*480));if(!running)return;
+      const sp=i===winner?peak*(0.97+Math.random()*0.04):Math.max(state.target==='mandelbrot'?2:0.6,state.best*(0.45+Math.random()*0.8));
+      const faster=sp>state.best;
+      applyEvent({type:'cell_result',round:r,cell:i,passed:true,speedup:sp,status:'passed',description:seq[r].desc});
+      if(faster||Math.random()<0.10)applyEvent({type:'journal',id:++state.jid,speedup:sp,status:faster?'keep':'discard',description:faster?seq[r].desc:'slower variant'});
+      if(sp>bestSp){bestSp=sp;bestCell=i;}
+    })()));
+    if(!running)break;
+    const kept=bestSp>state.best;
+    if(kept)applyEvent({type:'champion',round:r,speedup:seq[r].sp,code:seq[r].code,description:seq[r].desc,why:seq[r].why,cell:bestCell});
+    applyEvent({type:'round_end',round:r,best_speedup:Math.max(bestSp,state.best),kept});
+    await sleep(950);
+  }
+  if(running)narrate(`Done — ${state.best.toFixed(1)}× after ${state.round} rounds, ${state.attempts} attempts`,'end');
+  running=false;
+}
+
+/* ---- connection ---- */
+function setConn(m){$('#connDot').className='dot '+(m==='live'?'liveok':'sim');$('#connTxt').textContent=m==='live'?'live · ws':'simulated';}
+function connect(){if(location.protocol==='file:'){setConn('sim');return;}
+  try{const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');let op=false;
+    ws.onopen=()=>{op=true;setConn('live');stopSim();};
+    ws.onmessage=ev=>{try{applyEvent(JSON.parse(ev.data));}catch(_){}};
+    ws.onclose=()=>{if(!op)setConn('sim');};ws.onerror=()=>{if(!op)setConn('sim');};
+  }catch(_){setConn('sim');}}
+
+/* ---- wire up ---- */
+$('#segDiff').onclick=()=>{viewMode='diff';$('#segDiff').classList.add('on');$('#segFull').classList.remove('on');renderCode();};
+$('#segFull').onclick=()=>{viewMode='full';$('#segFull').classList.add('on');$('#segDiff').classList.remove('on');renderCode();};
+$('#runBtn').onclick=()=>{setConn('sim');runSim();};
+$('#targetSel').onchange=e=>{state.target=e.target.value;};
+/* ===== Swarm A: paste a GitHub repo -> ranked functions (fake data) ===== */
+const waitMs=ms=>new Promise(r=>setTimeout(r,ms));
+function show(v){ $('#landing').style.display=v==='landing'?'flex':'none';
+  $('#analysis').style.display=v==='analysis'?'flex':'none';
+  $('#app').style.display=v==='app'?'grid':'none'; }
+function parseRepo(u){ const m=(u||'').match(/github\.com[/:]([^/\s]+)\/([^/\s#?]+)/i);
+  if(m) return {owner:m[1], repo:m[2].replace(/\.git$/,'')};
+  const p=(u||'').split('/').filter(Boolean);
+  return {owner:p[p.length-2]||'local', repo:(p[p.length-1]||'repo').replace(/\.git$/,'')}; }
+function cand(file,fn,sig,score,est,target){ return {file,fn,sig,score,est,target}; }
+function buildCandidates(owner,repo){ const key=(owner+'/'+repo).toLowerCase();
+  if(key.includes('micrograd')||key.includes('nanogpt')||key.includes('grad')||key.includes('autograd')||key.includes('nn')) return [
+    cand('engine.py','Value.backward',{pure:1,numeric:1,hot:1,deps:1,oracle:1},97,'50–90×','micrograd'),
+    cand('engine.py','Value.__mul__/__add__/__pow__',{pure:1,numeric:1,hot:1,oracle:1},78,'20×','micrograd'),
+    cand('nn.py','Layer.__call__',{numeric:1,hot:1,oracle:1},61,'8×','micrograd'),
+    cand('engine.py','build_topo',{pure:1,hot:1},44,'~3×','micrograd') ];
+  if(key.includes('mandel')||key.includes('fractal')||key.includes('raytrac')||key.includes('render')) return [
+    cand('src/mandelbrot.py','mandelbrot',{pure:1,numeric:1,hot:1,deps:1,oracle:1},98,'50–90×','mandelbrot'),
+    cand('src/render.py','escape_time',{pure:1,hot:1,oracle:1},86,'40×','mandelbrot'),
+    cand('src/palette.py','colorize',{numeric:1,oracle:1},47,'~2×','mandelbrot'),
+    cand('src/io.py','write_ppm',{},19,'~1×','mandelbrot') ];
+  return [
+    cand('core/autograd.py','backward_pass',{pure:1,numeric:1,hot:1,deps:1,oracle:1},93,'40–80×','micrograd'),
+    cand('core/kernels.py','convolve2d',{pure:1,numeric:1,hot:1,oracle:1},90,'8–12×','mandelbrot'),
+    cand('utils/stats.py','rolling_mean',{numeric:1,hot:1,oracle:1},64,'~3×','micrograd'),
+    cand('io/loader.py','parse_records',{deps:1},21,'~1.1×','micrograd') ];
+}
+function addScan(t){ const d=document.createElement('div'); d.textContent=t; $('#anScan').appendChild(d); $('#anScan').scrollTop=1e6; }
+async function startAnalysis(url){ const {owner,repo}=parseRepo(url); state.repo={owner,repo};
+  $('#anRepo').textContent=owner+'/'+repo; show('analysis');
+  $('#anScan').innerHTML=''; $('#anList').style.display='none';
+  const nfn=800+Math.floor(Math.random()*900);
+  const steps=[`$ git clone https://github.com/${owner}/${repo}  …  done (shallow, 1 commit)`,
+    `parsing ${nfn} functions across the repository (AST)…`,
+    `scoring optimization potential on the swarm — pure · numeric/array · hot-loops · min-deps · deterministic oracle…`,
+    `ranked ${nfn} candidates by expected speedup.`];
+  for(const s of steps){ await waitMs(480); addScan(s); }
+  await waitMs(350);
+  const list=buildCandidates(owner,repo); $('#anCount').textContent=`(top ${list.length} of ${nfn})`;
+  renderCandidates(list); $('#anList').style.display='block';
+}
+function renderCandidates(list){ const SIGS=[['pure','pure'],['numeric','numeric'],['hot','hot-loop'],['deps','min-deps'],['oracle','oracle']];
+  $('#anList').querySelector('tbody').innerHTML=list.map((c,i)=>`<tr class="${i===0?'top':''}">
+    <td><div class="fnname">${c.fn}()</div><div class="fnfile">${c.file}</div></td>
+    <td><div class="sigs">${SIGS.map(([k,l])=>`<span class="sig ${c.sig[k]?'on':''}">${l}</span>`).join('')}</div></td>
+    <td><span class="scorebar"><i style="width:${c.score}%"></i></span> <span class="fnname">${c.score}</span></td>
+    <td style="font-family:var(--mono);color:var(--pass)">${c.est}</td>
+    <td style="text-align:right"><button class="forge" data-i="${i}">Forge →</button></td></tr>`).join('');
+  $('#anList').querySelectorAll('.forge').forEach(b=>b.onclick=()=>pickCandidate(list[+b.dataset.i]));
+}
+function pickCandidate(c){ state.target=c.target;
+  state.label=`${state.repo.owner}/${state.repo.repo} · ${c.fn}()`;
+  $('#targetTag').textContent=state.label;
+  const sel=$('#targetSel'); if(sel) sel.value=c.target;
+  show('app'); runSim(); }
+
+/* wiring */
+$('#analyzeBtn').onclick=()=>startAnalysis($('#repoUrl').value);
+$('#repoUrl').addEventListener('keydown',e=>{ if(e.key==='Enter') startAnalysis(e.target.value); });
+document.querySelectorAll('#landing .chip').forEach(b=>b.onclick=()=>{ $('#repoUrl').value=b.dataset.url; startAnalysis(b.dataset.url); });
+$('#backBtn').onclick=()=>show('landing');
+$('#newRepoBtn').onclick=()=>{ stopSim(); show('landing'); };
+buildGrid(); resetFunnel(); connect(); show('landing');
+
+/* ===== tiling bento window manager: drag header to reorder · corner handle to resize · min/max/snap ===== */
+function initTiling(){
+  const app=document.querySelector('.app'); if(!app) return;
+  const L=document.querySelectorAll('.col.left > section.card');
+  const R=document.querySelectorAll('.col.right > section.card');
+  const journalCard=app.querySelector(':scope > section.card');
+  const cards=[L[0],L[1],R[0],R[1],journalCard].filter(Boolean);
+  if(cards.length<2) return;
+  const main=document.querySelector('main');
+  const board=document.createElement('div'); board.id='board';
+  if(main&&main.parentNode){ main.parentNode.insertBefore(board,main); main.style.display='none'; } else { app.appendChild(board); }
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  /* tidy default layout, keyed by panel identity (order: swarm, narration, diff, lineage, journal) */
+  const DEFAULTS=[[3,7],[3,4],[3,6],[3,3],[6,4]];
+  const MINC=2,MAXC=6,MINR=2,MAXR=8, ROWUNIT=92;
+  function gapPx(){ const g=parseFloat(getComputedStyle(board).gap)||12; return g; }
+  function padPx(){ return parseFloat(getComputedStyle(board).paddingLeft)||12; }
+  function setSpan(c,cs,rs){ cs=clamp(Math.round(cs),MINC,MAXC); rs=clamp(Math.round(rs),MINR,MAXR);
+    c.dataset.cspan=cs; c.dataset.rspan=rs; c.style.setProperty('--cspan',cs); c.style.setProperty('--rspan',rs); }
+  /* build each panel: move into board, store defaults, inject controls + resize handle */
+  cards.forEach((c,i)=>{ c.style.margin='0'; board.appendChild(c);
+    const d=DEFAULTS[i]||[3,4]; c.dataset.dcspan=d[0]; c.dataset.drspan=d[1]; setSpan(c,d[0],d[1]);
+    const hd=c.querySelector('.hd');
+    if(hd){
+      const btns=document.createElement('span'); btns.className='win-btns';
+      const bMin=document.createElement('button'); bMin.className='win-btn'; bMin.type='button'; bMin.title='minimize'; bMin.textContent='–';
+      const bMax=document.createElement('button'); bMax.className='win-btn'; bMax.type='button'; bMax.title='maximize'; bMax.textContent='▢';
+      btns.appendChild(bMin); btns.appendChild(bMax); hd.appendChild(btns);
+      bMin.addEventListener('pointerdown',e=>e.stopPropagation());
+      bMax.addEventListener('pointerdown',e=>e.stopPropagation());
+      bMin.addEventListener('click',e=>{ e.stopPropagation(); toggleMin(c); });
+      bMax.addEventListener('click',e=>{ e.stopPropagation(); toggleMax(c); });
+    }
+    const rz=document.createElement('div'); rz.className='win-rsz'; rz.title='drag to resize'; c.appendChild(rz);
+    rz.addEventListener('pointerdown',e=>startResize(e,c,rz));
+  });
+  function toggleMin(c){
+    if(c.classList.contains('max')) toggleMax(c);                 // un-maximize first
+    if(c.classList.contains('min')){ c.classList.remove('min');
+      setSpan(c,+c.dataset.savedC||+c.dataset.dcspan,+c.dataset.savedR||+c.dataset.drspan); }
+    else { c.dataset.savedC=c.dataset.cspan; c.dataset.savedR=c.dataset.rspan;
+      c.classList.add('min'); c.style.setProperty('--rspan',1); c.dataset.rspan=1; }
+  }
+  function toggleMax(c){
+    if(c.classList.contains('max')){ c.classList.remove('max');
+      setSpan(c,+c.dataset.savedC||+c.dataset.dcspan,+c.dataset.savedR||+c.dataset.drspan); return; }
+    board.querySelectorAll('.card.max').forEach(o=>{ o.classList.remove('max');
+      setSpan(o,+o.dataset.savedC||+o.dataset.dcspan,+o.dataset.savedR||+o.dataset.drspan); });
+    if(c.classList.contains('min')){ c.classList.remove('min'); }
+    c.dataset.savedC=c.dataset.cspan; c.dataset.savedR=c.dataset.rspan;
+    c.classList.add('max'); setSpan(c,MAXC,MAXR);
+  }
+  /* drag a header to REORDER (swap DOM order on midpoint crossing); never overlaps */
+  cards.forEach(c=>{ const hd=c.querySelector('.hd'); if(!hd) return;
+    hd.addEventListener('pointerdown',e=>{ if(e.target.closest('button,select,input,.seg,.win-btn,.win-btns,.win-rsz')) return;
+      e.preventDefault(); c.classList.add('dragging'); try{hd.setPointerCapture(e.pointerId);}catch(_){}
+      const mv=ev=>{ const el=document.elementFromPoint(ev.clientX,ev.clientY); if(!el) return;
+        const tgt=el.closest('#board > .card'); if(!tgt||tgt===c||tgt.parentNode!==board) return;
+        const r=tgt.getBoundingClientRect(); const after=(ev.clientY-r.top)>r.height/2||(Math.abs(ev.clientY-r.top-r.height/2)<r.height*0.25&&(ev.clientX-r.left)>r.width/2);
+        if(after){ if(tgt.nextSibling!==c) board.insertBefore(c,tgt.nextSibling); }
+        else { if(tgt.previousSibling!==c) board.insertBefore(c,tgt); } };
+      const up=ev=>{ c.classList.remove('dragging'); try{hd.releasePointerCapture(e.pointerId);}catch(_){}
+        hd.removeEventListener('pointermove',mv); hd.removeEventListener('pointerup',up); hd.removeEventListener('pointercancel',up); document.body.style.userSelect=''; };
+      document.body.style.userSelect='none';
+      hd.addEventListener('pointermove',mv); hd.addEventListener('pointerup',up); hd.addEventListener('pointercancel',up);
+    });
+  });
+  /* drag the corner handle to RESIZE spans (auto-flow reflows neighbors; can't overlap or exceed board width) */
+  function startResize(e,c,rz){ e.preventDefault(); e.stopPropagation();
+    if(c.classList.contains('min')) c.classList.remove('min');
+    if(c.classList.contains('max')) c.classList.remove('max');
+    c.classList.add('resizing'); try{rz.setPointerCapture(e.pointerId);}catch(_){}
+    const g=gapPx(), pad=padPx();
+    const colW=(board.clientWidth-2*pad-(MAXC-1)*g)/MAXC;
+    const colPitch=colW+g, rowPitch=ROWUNIT+g;
+    const mv=ev=>{ const rect=c.getBoundingClientRect();
+      const wpx=ev.clientX-rect.left, hpx=ev.clientY-rect.top;
+      setSpan(c, clamp((wpx+g)/colPitch,MINC,MAXC), clamp((hpx+g)/rowPitch,MINR,MAXR)); };
+    const up=()=>{ c.classList.remove('resizing'); try{rz.releasePointerCapture(e.pointerId);}catch(_){}
+      rz.removeEventListener('pointermove',mv); rz.removeEventListener('pointerup',up); rz.removeEventListener('pointercancel',up); };
+    rz.addEventListener('pointermove',mv); rz.addEventListener('pointerup',up); rz.addEventListener('pointercancel',up);
+  }
+  /* SNAP TO GRID: re-apply tidy defaults to every panel in its CURRENT dom order (order preserved) */
+  function snap(){ board.querySelectorAll(':scope > .card').forEach(c=>{ c.classList.remove('min','max');
+    delete c.dataset.savedC; delete c.dataset.savedR; setSpan(c,+c.dataset.dcspan,+c.dataset.drspan); }); }
+  const snapBtn=document.getElementById('snapBtn'); if(snapBtn) snapBtn.addEventListener('click',snap);
+  window.snapTiles=snap;
+}
+initTiling();
+</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+{"type": "journal", "id": 1, "speedup": 1.0, "status": "keep", "description": "seed naive port (baseline)"}
+{"type": "champion", "round": 0, "speedup": 1.0, "cell": null, "description": "seed naive port", "why": "known-correct floor for the ratchet", "code": "use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};\nuse pyo3::prelude::*;\n\n#[pyfunction]\nfn solve<'py>(py: Python<'py>, x: PyReadonlyArray1<'py, f64>) -> Bound<'py, PyArray1<f64>> {\n    let view = x.as_array();\n    let out: Vec<f64> = view.iter().map(|&xi| {\n        ((((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0) * xi - 0.7) * xi + 1.1\n    }).collect();\n    out.into_pyarray(py)\n}\n\n#[pymodule]\nfn rust_solve(m: &Bound<'_, PyModule>) -> PyResult<()> {\n    m.add_function(wrap_pyfunction!(solve, m)?)?;\n    Ok(())\n}\n"}
+{"type": "round_start", "round": 1, "target": "poly_eval_hotloop", "n_cells": 10}
+{"type": "cell_update", "round": 1, "cell": 0, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 1, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 2, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 3, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 4, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 5, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 6, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 7, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 8, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 9, "status": "spawning"}
+{"type": "cell_update", "round": 1, "cell": 0, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 0, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 0, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 0, "passed": true, "speedup": 196.96573577480345, "status": "passed", "description": "geomean 196.97x (95.29x@1e+02, 274.31x@1e+04, 292.33x@1e+06), memory: n/a (native), stable, held-out 262.95x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 2, "speedup": 196.96573577480345, "status": "keep", "description": "geomean 196.97x (95.29x@1e+02, 274.31x@1e+04, 292.33x@1e+06), memory: n/a (native), stable, held-out 262.95x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 1, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 1, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 1, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 1, "passed": true, "speedup": 253.36289554274035, "status": "passed", "description": "geomean 253.36x (112.81x@1e+02, 372.30x@1e+04, 387.26x@1e+06), memory: n/a (native), stable, held-out 378.84x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 3, "speedup": 253.36289554274035, "status": "keep", "description": "geomean 253.36x (112.81x@1e+02, 372.30x@1e+04, 387.26x@1e+06), memory: n/a (native), stable, held-out 378.84x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 2, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 2, "status": "testing"}
+{"type": "cell_result", "round": 1, "cell": 2, "passed": false, "speedup": 0.0, "status": "failed", "description": "correctness FAIL (max abs error 2.31e+02) -> discarded", "reward_hack": true}
+{"type": "journal", "id": 4, "speedup": 0.0, "status": "discard", "description": "correctness FAIL (max abs error 2.31e+02) -> discarded", "reward_hack": true}
+{"type": "cell_update", "round": 1, "cell": 3, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 3, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 3, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 3, "passed": true, "speedup": 323.51075317877564, "status": "passed", "description": "geomean 323.51x (114.30x@1e+02, 546.03x@1e+04, 542.49x@1e+06), memory: n/a (native), stable, held-out 521.03x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 5, "speedup": 323.51075317877564, "status": "keep", "description": "geomean 323.51x (114.30x@1e+02, 546.03x@1e+04, 542.49x@1e+06), memory: n/a (native), stable, held-out 521.03x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 4, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 4, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 4, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 4, "passed": true, "speedup": 277.40152483398066, "status": "passed", "description": "geomean 277.40x (110.10x@1e+02, 436.52x@1e+04, 444.17x@1e+06), memory: n/a (native), stable, held-out 417.92x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 6, "speedup": 277.40152483398066, "status": "discard", "description": "geomean 277.40x (110.10x@1e+02, 436.52x@1e+04, 444.17x@1e+06), memory: n/a (native), stable, held-out 417.92x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 5, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 5, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 5, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 5, "passed": true, "speedup": 327.49681290114137, "status": "passed", "description": "geomean 327.50x (113.45x@1e+02, 578.98x@1e+04, 534.77x@1e+06), memory: n/a (native), stable, held-out 526.29x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 7, "speedup": 327.49681290114137, "status": "keep", "description": "geomean 327.50x (113.45x@1e+02, 578.98x@1e+04, 534.77x@1e+06), memory: n/a (native), stable, held-out 526.29x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 6, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 6, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 6, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 6, "passed": true, "speedup": 274.6361588780061, "status": "passed", "description": "geomean 274.64x (107.57x@1e+02, 433.51x@1e+04, 444.21x@1e+06), memory: n/a (native), stable, held-out 419.46x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 8, "speedup": 274.6361588780061, "status": "discard", "description": "geomean 274.64x (107.57x@1e+02, 433.51x@1e+04, 444.21x@1e+06), memory: n/a (native), stable, held-out 419.46x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 7, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 7, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 7, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 7, "passed": true, "speedup": 267.3235843530253, "status": "passed", "description": "geomean 267.32x (106.56x@1e+02, 420.27x@1e+04, 426.55x@1e+06), memory: n/a (native), stable, held-out 417.21x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 9, "speedup": 267.3235843530253, "status": "discard", "description": "geomean 267.32x (106.56x@1e+02, 420.27x@1e+04, 426.55x@1e+06), memory: n/a (native), stable, held-out 417.21x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 8, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 8, "status": "testing"}
+{"type": "cell_update", "round": 1, "cell": 8, "status": "benchmarking"}
+{"type": "cell_result", "round": 1, "cell": 8, "passed": true, "speedup": 326.8806343103826, "status": "passed", "description": "geomean 326.88x (110.86x@1e+02, 558.36x@1e+04, 564.24x@1e+06), memory: n/a (native), stable, held-out 551.14x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 10, "speedup": 326.8806343103826, "status": "discard", "description": "geomean 326.88x (110.86x@1e+02, 558.36x@1e+04, 564.24x@1e+06), memory: n/a (native), stable, held-out 551.14x@4e+06 -> kept"}
+{"type": "cell_update", "round": 1, "cell": 9, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 1, "cell": 9, "status": "testing"}
+{"type": "cell_result", "round": 1, "cell": 9, "passed": false, "speedup": 0.0, "status": "failed", "description": "correctness FAIL (max abs error 5.81e+02) -> discarded", "reward_hack": true}
+{"type": "journal", "id": 11, "speedup": 0.0, "status": "discard", "description": "correctness FAIL (max abs error 5.81e+02) -> discarded", "reward_hack": true}
+{"type": "champion", "round": 1, "speedup": 327.49681290114137, "cell": 5, "description": "geomean 327.50x (113.45x@1e+02, 578.98x@1e+04, 534.77x@1e+06), memory: n/a (native), stable, held-out 526.29x@4e+06 -> kept", "why": "geomean 327.50x (113.45x@1e+02, 578.98x@1e+04, 534.77x@1e+06), memory: n/a (native), stable, held-out 526.29x@4e+06 -> kept", "code": "use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};\nuse pyo3::prelude::*;\n\n#[pyfunction]\nfn solve<'py>(py: Python<'py>, x: PyReadonlyArray1<'py, f64>) -> Bound<'py, PyArray1<f64>> {\n    let view = x.as_array();\n    let out: Vec<f64> = view.iter().map(|&xi| {\n        let x2 = xi * xi;\n        let x3 = x2 * xi;\n        let x4 = x3 * xi;\n        let x5 = x4 * xi;\n        ((((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0) * xi - 0.7) * xi + 1.1\n    }).collect();\n    out.into_pyarray(py)\n}\n\n#[pymodule]\nfn rust_solve(m: &Bound<'_, PyModule>) -> PyResult<()> {\n    m.add_function(wrap_pyfunction!(solve, m)?)?;\n    Ok(())\n}"}
+{"type": "round_end", "round": 1, "best_speedup": 327.49681290114137, "kept": true}
+{"type": "round_start", "round": 2, "target": "poly_eval_hotloop", "n_cells": 10}
+{"type": "cell_update", "round": 2, "cell": 0, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 1, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 2, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 3, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 4, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 5, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 6, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 7, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 8, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 9, "status": "spawning"}
+{"type": "cell_update", "round": 2, "cell": 0, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 0, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 0, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 0, "passed": true, "speedup": 303.7485394750978, "status": "passed", "description": "geomean 303.75x (117.69x@1e+02, 546.39x@1e+04, 435.80x@1e+06), memory: n/a (native), stable, held-out 540.50x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 12, "speedup": 303.7485394750978, "status": "discard", "description": "geomean 303.75x (117.69x@1e+02, 546.39x@1e+04, 435.80x@1e+06), memory: n/a (native), stable, held-out 540.50x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 1, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 1, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 1, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 1, "passed": true, "speedup": 322.12488311748905, "status": "passed", "description": "geomean 322.12x (110.21x@1e+02, 543.30x@1e+04, 558.21x@1e+06), memory: n/a (native), stable, held-out 553.66x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 13, "speedup": 322.12488311748905, "status": "discard", "description": "geomean 322.12x (110.21x@1e+02, 543.30x@1e+04, 558.21x@1e+06), memory: n/a (native), stable, held-out 553.66x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 2, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 2, "status": "testing"}
+{"type": "cell_result", "round": 2, "cell": 2, "passed": false, "speedup": 0.0, "status": "failed", "description": "correctness FAIL (max abs error 2.31e+02) -> discarded", "reward_hack": true}
+{"type": "journal", "id": 14, "speedup": 0.0, "status": "discard", "description": "correctness FAIL (max abs error 2.31e+02) -> discarded", "reward_hack": true}
+{"type": "cell_update", "round": 2, "cell": 3, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 3, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 3, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 3, "passed": true, "speedup": 285.8863796131501, "status": "passed", "description": "geomean 285.89x (103.21x@1e+02, 467.12x@1e+04, 484.66x@1e+06), memory: n/a (native), stable, held-out 489.78x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 15, "speedup": 285.8863796131501, "status": "discard", "description": "geomean 285.89x (103.21x@1e+02, 467.12x@1e+04, 484.66x@1e+06), memory: n/a (native), stable, held-out 489.78x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 4, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 4, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 4, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 4, "passed": true, "speedup": 319.8349822108485, "status": "passed", "description": "geomean 319.83x (108.80x@1e+02, 546.88x@1e+04, 549.85x@1e+06), memory: n/a (native), stable, held-out 536.27x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 16, "speedup": 319.8349822108485, "status": "discard", "description": "geomean 319.83x (108.80x@1e+02, 546.88x@1e+04, 549.85x@1e+06), memory: n/a (native), stable, held-out 536.27x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 5, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 5, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 5, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 5, "passed": true, "speedup": 321.9739249103009, "status": "passed", "description": "geomean 321.97x (110.62x@1e+02, 548.87x@1e+04, 549.76x@1e+06), memory: n/a (native), stable, held-out 543.81x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 17, "speedup": 321.9739249103009, "status": "discard", "description": "geomean 321.97x (110.62x@1e+02, 548.87x@1e+04, 549.76x@1e+06), memory: n/a (native), stable, held-out 543.81x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 6, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 6, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 6, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 6, "passed": true, "speedup": 319.532676560516, "status": "passed", "description": "geomean 319.53x (110.25x@1e+02, 547.43x@1e+04, 540.57x@1e+06), memory: n/a (native), stable, held-out 542.31x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 18, "speedup": 319.532676560516, "status": "discard", "description": "geomean 319.53x (110.25x@1e+02, 547.43x@1e+04, 540.57x@1e+06), memory: n/a (native), stable, held-out 542.31x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 7, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_result", "round": 2, "cell": 7, "passed": false, "speedup": 0.0, "status": "crashed", "description": "compile: error: could not compile `rust_solve` (lib) due to 1 previous error", "reward_hack": false}
+{"type": "journal", "id": 19, "speedup": 0.0, "status": "crash", "description": "compile: error: could not compile `rust_solve` (lib) due to 1 previous error"}
+{"type": "cell_update", "round": 2, "cell": 8, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 8, "status": "testing"}
+{"type": "cell_update", "round": 2, "cell": 8, "status": "benchmarking"}
+{"type": "cell_result", "round": 2, "cell": 8, "passed": true, "speedup": 305.34479895929917, "status": "passed", "description": "geomean 305.34x (97.07x@1e+02, 544.07x@1e+04, 539.03x@1e+06), memory: n/a (native), stable, held-out 520.40x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 20, "speedup": 305.34479895929917, "status": "discard", "description": "geomean 305.34x (97.07x@1e+02, 544.07x@1e+04, 539.03x@1e+06), memory: n/a (native), stable, held-out 520.40x@4e+06 -> kept"}
+{"type": "cell_update", "round": 2, "cell": 9, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 2, "cell": 9, "status": "testing"}
+{"type": "cell_result", "round": 2, "cell": 9, "passed": false, "speedup": 0.0, "status": "failed", "description": "correctness FAIL (max abs error 3.76e+02) -> discarded", "reward_hack": true}
+{"type": "journal", "id": 21, "speedup": 0.0, "status": "discard", "description": "correctness FAIL (max abs error 3.76e+02) -> discarded", "reward_hack": true}
+{"type": "round_end", "round": 2, "best_speedup": 327.49681290114137, "kept": false}
+{"type": "round_start", "round": 3, "target": "poly_eval_hotloop", "n_cells": 10}
+{"type": "cell_update", "round": 3, "cell": 0, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 1, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 2, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 3, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 4, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 5, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 6, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 7, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 8, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 9, "status": "spawning"}
+{"type": "cell_update", "round": 3, "cell": 0, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 0, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 0, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 0, "passed": true, "speedup": 326.2701840270075, "status": "passed", "description": "geomean 326.27x (109.48x@1e+02, 554.81x@1e+04, 571.83x@1e+06), memory: n/a (native), stable, held-out 540.75x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 22, "speedup": 326.2701840270075, "status": "discard", "description": "geomean 326.27x (109.48x@1e+02, 554.81x@1e+04, 571.83x@1e+06), memory: n/a (native), stable, held-out 540.75x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 1, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 1, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 1, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 1, "passed": true, "speedup": 325.42118927830103, "status": "passed", "description": "geomean 325.42x (116.95x@1e+02, 547.52x@1e+04, 538.19x@1e+06), memory: n/a (native), stable, held-out 527.06x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 23, "speedup": 325.42118927830103, "status": "discard", "description": "geomean 325.42x (116.95x@1e+02, 547.52x@1e+04, 538.19x@1e+06), memory: n/a (native), stable, held-out 527.06x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 2, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 2, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 2, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 2, "passed": true, "speedup": 295.798794762481, "status": "passed", "description": "geomean 295.80x (107.44x@1e+02, 452.28x@1e+04, 532.62x@1e+06), memory: n/a (native), stable, held-out 528.19x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 24, "speedup": 295.798794762481, "status": "discard", "description": "geomean 295.80x (107.44x@1e+02, 452.28x@1e+04, 532.62x@1e+06), memory: n/a (native), stable, held-out 528.19x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 3, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 3, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 3, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 3, "passed": true, "speedup": 226.30341281667427, "status": "passed", "description": "geomean 226.30x (99.62x@1e+02, 335.77x@1e+04, 346.48x@1e+06), memory: n/a (native), stable, held-out 299.34x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 25, "speedup": 226.30341281667427, "status": "discard", "description": "geomean 226.30x (99.62x@1e+02, 335.77x@1e+04, 346.48x@1e+06), memory: n/a (native), stable, held-out 299.34x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 4, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 4, "status": "testing"}
+{"type": "cell_result", "round": 3, "cell": 4, "passed": false, "speedup": 0.0, "status": "failed", "description": "correctness FAIL (max abs error 5.78e+02) -> discarded", "reward_hack": true}
+{"type": "journal", "id": 26, "speedup": 0.0, "status": "discard", "description": "correctness FAIL (max abs error 5.78e+02) -> discarded", "reward_hack": true}
+{"type": "cell_update", "round": 3, "cell": 5, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 5, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 5, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 5, "passed": true, "speedup": 315.79319485534165, "status": "passed", "description": "geomean 315.79x (107.27x@1e+02, 549.39x@1e+04, 534.39x@1e+06), memory: n/a (native), stable, held-out 540.56x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 27, "speedup": 315.79319485534165, "status": "discard", "description": "geomean 315.79x (107.27x@1e+02, 549.39x@1e+04, 534.39x@1e+06), memory: n/a (native), stable, held-out 540.56x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 6, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 6, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 6, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 6, "passed": true, "speedup": 303.45940389103026, "status": "passed", "description": "geomean 303.46x (121.76x@1e+02, 472.58x@1e+04, 485.66x@1e+06), memory: n/a (native), stable, held-out 493.26x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 28, "speedup": 303.45940389103026, "status": "discard", "description": "geomean 303.46x (121.76x@1e+02, 472.58x@1e+04, 485.66x@1e+06), memory: n/a (native), stable, held-out 493.26x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 7, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 7, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 7, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 7, "passed": true, "speedup": 318.95993595151145, "status": "passed", "description": "geomean 318.96x (111.86x@1e+02, 531.16x@1e+04, 546.15x@1e+06), memory: n/a (native), stable, held-out 546.54x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 29, "speedup": 318.95993595151145, "status": "discard", "description": "geomean 318.96x (111.86x@1e+02, 531.16x@1e+04, 546.15x@1e+06), memory: n/a (native), stable, held-out 546.54x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 8, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 8, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 8, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 8, "passed": true, "speedup": 330.64765887916315, "status": "passed", "description": "geomean 330.65x (113.80x@1e+02, 568.84x@1e+04, 558.41x@1e+06), memory: n/a (native), stable, held-out 569.23x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 30, "speedup": 330.64765887916315, "status": "keep", "description": "geomean 330.65x (113.80x@1e+02, 568.84x@1e+04, 558.41x@1e+06), memory: n/a (native), stable, held-out 569.23x@4e+06 -> kept"}
+{"type": "cell_update", "round": 3, "cell": 9, "status": "compiling", "model": "gpt-4o-mini"}
+{"type": "cell_update", "round": 3, "cell": 9, "status": "testing"}
+{"type": "cell_update", "round": 3, "cell": 9, "status": "benchmarking"}
+{"type": "cell_result", "round": 3, "cell": 9, "passed": true, "speedup": 316.9285795330143, "status": "passed", "description": "geomean 316.93x (109.80x@1e+02, 547.60x@1e+04, 529.43x@1e+06), memory: n/a (native), stable, held-out 522.92x@4e+06 -> kept", "reward_hack": false}
+{"type": "journal", "id": 31, "speedup": 316.9285795330143, "status": "discard", "description": "geomean 316.93x (109.80x@1e+02, 547.60x@1e+04, 529.43x@1e+06), memory: n/a (native), stable, held-out 522.92x@4e+06 -> kept"}
+{"type": "champion", "round": 3, "speedup": 330.64765887916315, "cell": 8, "description": "geomean 330.65x (113.80x@1e+02, 568.84x@1e+04, 558.41x@1e+06), memory: n/a (native), stable, held-out 569.23x@4e+06 -> kept", "why": "geomean 330.65x (113.80x@1e+02, 568.84x@1e+04, 558.41x@1e+06), memory: n/a (native), stable, held-out 569.23x@4e+06 -> kept", "code": "use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};\nuse pyo3::prelude::*;\n\n#[pyfunction]\nfn solve<'py>(py: Python<'py>, x: PyReadonlyArray1<'py, f64>) -> Bound<'py, PyArray1<f64>> {\n    let view = x.as_array();\n    let out: Vec<f64> = view.iter().map(|&xi| {\n        let xi_half = 0.5 * xi; // Precompute 0.5 * xi\n        let term1 = xi_half - 1.2; // (0.5 * xi - 1.2)\n        let term2 = term1 * xi + 0.3; // ((0.5 * xi - 1.2) * xi + 0.3)\n        let term3 = term2 * xi + 2.0; // (((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0)\n        let term4 = term3 * xi - 0.7; // ((((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0) * xi - 0.7)\n        term4 * xi + 1.1 // (((((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0) * xi - 0.7) * xi + 1.1)\n    }).collect();\n    out.into_pyarray(py)\n}\n\n#[pymodule]\nfn rust_solve(m: &Bound<'_, PyModule>) -> PyResult<()> {\n    m.add_function(wrap_pyfunction!(solve, m)?)?;\n    Ok(())\n}"}
+{"type": "round_end", "round": 3, "best_speedup": 330.64765887916315, "kept": true}
