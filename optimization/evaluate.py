@@ -7,9 +7,12 @@
 #     model, at randomized shapes — a reviewer can confirm hardcoding is impossible.
 #
 # The champion is "the fastest port that regresses on NOTHING": a candidate must clear
-# lexicographic gates (correct → no size regression → memory → stable) before its
-# geometric-mean speedup is allowed to compete. Artifact-agnostic: `candidate_fn` may be
-# today's Python solve(x) or tomorrow's imported Rust extension — the metric is unchanged.
+# lexicographic gates (correct → no size regression → memory → stable → no HELD-OUT
+# collapse) before its geometric-mean speedup is allowed to compete. The held-out gate
+# is the oversight primitive: a size BEYOND the swept range, so a port that overfits the
+# eval distribution (fast in-sample, collapses out-of-sample) is caught before crowning.
+# Artifact-agnostic: `candidate_fn` may be today's Python solve(x) or an imported Rust
+# extension — the metric is unchanged.
 import inspect
 import os
 import time
@@ -43,6 +46,10 @@ REGRESSION_FLOOR = _envfloat("RF_REGRESSION_FLOOR", 0.85)
 MEM_CEILING      = _envfloat("RF_MEM_CEILING", 1.5)
 STABILITY_SAMPLES = _envint("RF_STABILITY_SAMPLES", 5)
 STABILITY_COV    = _envfloat("RF_STABILITY_COV", 0.15)
+# Oversight: a size BEYOND the swept range the candidate optimized against. Default 4x the
+# largest swept size; kept modest + fewer timing samples so the extra check stays cheap.
+HELDOUT_SIZE     = _envint("RF_HELDOUT_SIZE", max(SIZES) * 4)
+HELDOUT_BEST_OF  = _envint("RF_HELDOUT_BEST_OF", 3)
 
 # Harness input-generation seed. Fixed (deterministic) and unseen by the mutation model —
 # this file is frozen and is never shown to the LLM, so a constant seed is both
@@ -57,6 +64,7 @@ class ArgSchema:
     kind: str                 # "ndarray" | "scalar" | "sequence"
     dtype: str | None = None  # e.g. "float64" for ndarrays
     ndim: int | None = None
+    shape: tuple = ()         # the sample's shape (used to keep non-scaling dims)
     scales: bool = False      # does this arg's length scale the workload?
 
 
@@ -81,20 +89,38 @@ def infer_schema(reference, sample_inputs) -> Schema:
     for i, val in enumerate(sample_inputs):
         name = params[i].name if i < len(params) else f"arg{i}"
         if isinstance(val, np.ndarray):
-            args.append(ArgSchema(name, "ndarray", str(val.dtype), val.ndim))
+            args.append(ArgSchema(name, "ndarray", str(val.dtype), val.ndim, tuple(val.shape)))
             sizes.append(val.size)
         elif isinstance(val, (list, tuple)):
-            args.append(ArgSchema(name, "sequence"))
+            args.append(ArgSchema(name, "sequence", shape=(len(val),)))
             sizes.append(len(val))
         else:
             args.append(ArgSchema(name, "scalar"))
             sizes.append(-1)
     if sizes:
-        # The argument with the largest sample size carries the scaling axis.
-        scale_idx = int(np.argmax(sizes))
-        if sizes[scale_idx] > 0:
-            args[scale_idx].scales = True
+        # Mark EVERY argument at the largest sample size as scaling. A single big arg
+        # (elementwise / reduction) scales alone; equal-size paired args (matmul A@B,
+        # or weights·inputs) scale together so generated inputs stay mutually compatible.
+        mx = max(sizes)
+        if mx > 0:
+            for a, s in zip(args, sizes):
+                if s == mx:
+                    a.scales = True
     return Schema(args)
+
+
+def _scaled_shape(arg: "ArgSchema", size: int) -> tuple:
+    """Shape for a scaling ndarray at the given workload size, preserving rank.
+
+    1-D → (size,); 2-D → (size, size) so paired 2-D args stay matmul-compatible;
+    higher-rank → scale axis 0, keep the rest. Non-scaling args keep their sample shape.
+    """
+    ndim = arg.ndim or 1
+    if ndim <= 1:
+        return (size,)
+    if ndim == 2:
+        return (size, size)
+    return (size,) + tuple(arg.shape[1:])
 
 
 def _make_args(schema: Schema, sample_inputs, size: int, rng) -> tuple:
@@ -102,11 +128,11 @@ def _make_args(schema: Schema, sample_inputs, size: int, rng) -> tuple:
     out = []
     for arg, sample in zip(schema.args, sample_inputs):
         if arg.kind == "ndarray":
-            n = size if arg.scales else int(np.asarray(sample).size)
             dt = arg.dtype or "float64"
-            out.append(rng.standard_normal(n).astype(dt))
+            shp = _scaled_shape(arg, size) if arg.scales else arg.shape
+            out.append(rng.standard_normal(shp).astype(dt))
         elif arg.kind == "sequence":
-            n = size if arg.scales else len(sample)
+            n = size if arg.scales else (arg.shape[0] if arg.shape else len(sample))
             out.append(rng.standard_normal(n).tolist())
         else:  # scalar — reuse the representative value (don't scale)
             out.append(sample)
@@ -114,11 +140,12 @@ def _make_args(schema: Schema, sample_inputs, size: int, rng) -> tuple:
 
 
 # ── Timing + memory primitives ───────────────────────────────────────────────────
-def _best_of(fn, args) -> float:
-    """Minimum wall-time over BEST_OF runs. Min (not median): noise only ADDS time."""
+def _best_of(fn, args, n: int | None = None) -> float:
+    """Minimum wall-time over n runs (default BEST_OF). Min, not median: noise only ADDS time."""
+    n = n or BEST_OF
     fn(*args)  # warm up
     best = float("inf")
-    for _ in range(BEST_OF):
+    for _ in range(n):
         t0 = time.perf_counter()
         fn(*args)
         best = min(best, time.perf_counter() - t0)
@@ -128,9 +155,8 @@ def _best_of(fn, args) -> float:
 def _peak_mem(fn, args) -> int:
     """Peak Python-tracked allocation (bytes) for one call, via tracemalloc.
 
-    Note: tracemalloc tracks Python-level allocations; native (e.g. numpy C buffer)
-    memory is only partially visible. Good enough to catch gratuitous Python-side
-    blow-ups; swap for peak RSS if native accuracy is later required.
+    tracemalloc tracks Python-level allocations; native (Rust/PyO3) memory is invisible
+    here — handled honestly by the `native` branch in evaluate(). Real fix: peak RSS.
     """
     tracemalloc.start()
     tracemalloc.reset_peak()
@@ -156,7 +182,7 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
     representative argument tuple used only to infer the schema. Returns a dict with the
     ratchet's compared number `speedup` (the gated geomean, 0.0 if ineligible) plus a
     full research record: per-size speedups, geomean, mem_ratio, max_abs_error, stable,
-    and a human-readable verdict.
+    speedup_heldout, and a human-readable verdict.
     """
     rng = np.random.default_rng(_GEN_SEED)  # unseen by the mutation model
 
@@ -172,7 +198,7 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
     base = {
         "passed": False, "speedup": 0.0, "geomean_speedup": 0.0,
         "speedup_by_size": {}, "mem_ratio": 0.0, "max_abs_error": None,
-        "stable": False, "verdict": "", "error": None,
+        "stable": False, "speedup_heldout": 0.0, "verdict": "", "error": None,
     }
 
     # ── Gate 1: correctness (differential fuzz on unseen inputs) ──────────────────
@@ -241,10 +267,11 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
         "mem_ratio": mem_ratio,
         "max_abs_error": max_abs_error,
         "stable": stable,
+        "speedup_heldout": None,
         "error": None,
     }
 
-    # ── 1e. Gated (lexicographic) eligibility, then 1f. headline = gated geomean ──
+    # ── 1e. Gated (lexicographic) eligibility ────────────────────────────────────
     worst_size = min(speedup_by_size, key=speedup_by_size.get)
     worst = speedup_by_size[worst_size]
     if worst < REGRESSION_FLOOR:
@@ -259,6 +286,31 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
         verdict = f"geomean {geomean:.2f}x but timing unstable -> distrusted -> discarded"
         return {**record, "speedup": 0.0, "verdict": verdict}
 
+    # ── Held-out oversight gate: a size BEYOND the swept range (the candidate never got
+    #    to optimize for it). Catches in-sample overfit — collapse in correctness OR speed.
+    ho_args = _make_args(schema, sample_inputs, HELDOUT_SIZE, rng)
+    try:
+        ho_got = np.asarray(candidate_fn(*ho_args), dtype=np.float64)
+        ho_ref = np.asarray(reference(*ho_args), dtype=np.float64)
+    except Exception as e:  # noqa: BLE001
+        return {**record, "speedup": 0.0,
+                "verdict": f"crash at held-out {HELDOUT_SIZE:.0e} -> {e!r} -> HELD-OUT -> discarded"}
+    if ho_got.shape != ho_ref.shape or not np.allclose(ho_got, ho_ref, rtol=RTOL, atol=ATOL):
+        d = float(np.max(np.abs(ho_got - ho_ref))) if ho_got.shape == ho_ref.shape else float("inf")
+        return {**record, "speedup": 0.0,
+                "verdict": (f"geomean {geomean:.2f}x in-sample but WRONG at held-out "
+                            f"{HELDOUT_SIZE:.0e} (err {d:.2e}) -> HELD-OUT CORRECTNESS -> discarded")}
+    ho_ref_t = _best_of(reference, ho_args, HELDOUT_BEST_OF)
+    ho_cand_t = _best_of(candidate_fn, ho_args, HELDOUT_BEST_OF)
+    heldout_speedup = (ho_ref_t / ho_cand_t) if ho_cand_t > 0 else 0.0
+    record["speedup_heldout"] = heldout_speedup
+    if heldout_speedup < REGRESSION_FLOOR:
+        verdict = (f"geomean {geomean:.2f}x in-sample but {heldout_speedup:.2f}x@{HELDOUT_SIZE:.0e} "
+                   f"(held-out) < floor {REGRESSION_FLOOR} -> HELD-OUT REGRESSION -> discarded")
+        return {**record, "speedup": 0.0, "verdict": verdict}
+
+    # ── 1f. Headline = gated geomean (only reached when ALL gates pass) ───────────
     sizes_str = ", ".join(f"{v:.2f}x@{s:.0e}" for s, v in speedup_by_size.items())
-    verdict = f"geomean {geomean:.2f}x ({sizes_str}), {mem_part}, stable -> kept"
+    verdict = (f"geomean {geomean:.2f}x ({sizes_str}), {mem_part}, stable, "
+               f"held-out {heldout_speedup:.2f}x@{HELDOUT_SIZE:.0e} -> kept")
     return {**record, "speedup": geomean, "verdict": verdict}
