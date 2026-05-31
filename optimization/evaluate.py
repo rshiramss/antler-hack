@@ -212,6 +212,12 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
     ref_peak = _peak_mem(reference, mem_args) or 1
     cand_peak = _peak_mem(candidate_fn, mem_args)
     mem_ratio = cand_peak / ref_peak
+    # tracemalloc only sees Python allocations. A native (e.g. Rust/PyO3) candidate
+    # manages its own memory, so cand_peak~0 is NOT a real 0 — report it honestly rather
+    # than claim a pass the gate didn't actually make. (Real fix: peak-RSS measurement,
+    # deferred post-hackathon.) The gate stays load-bearing for Python artifacts.
+    native = not (inspect.isfunction(candidate_fn) or inspect.ismethod(candidate_fn))
+    mem_part = "memory: n/a (native)" if native else f"mem {mem_ratio:.2f}x"
 
     # ── 1d. Stability: spread of independent best-of-N samples at the mid size ────
     def _measure_stability() -> bool:
@@ -245,7 +251,7 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
         verdict = (f"geomean {geomean:.2f}x but {worst:.2f}x@{worst_size:.0e} "
                    f"< floor {REGRESSION_FLOOR} -> SIZE REGRESSION -> discarded")
         return {**record, "speedup": 0.0, "verdict": verdict}
-    if mem_ratio > MEM_CEILING:
+    if not native and mem_ratio > MEM_CEILING:   # gate is a noop for native artifacts (see above)
         verdict = (f"geomean {geomean:.2f}x but mem {mem_ratio:.2f}x "
                    f"> ceiling {MEM_CEILING} -> MEMORY -> discarded")
         return {**record, "speedup": 0.0, "verdict": verdict}
@@ -254,5 +260,5 @@ def evaluate(candidate_fn, reference=None, sample_input=None) -> dict:
         return {**record, "speedup": 0.0, "verdict": verdict}
 
     sizes_str = ", ".join(f"{v:.2f}x@{s:.0e}" for s, v in speedup_by_size.items())
-    verdict = f"geomean {geomean:.2f}x ({sizes_str}), mem {mem_ratio:.2f}x, stable -> kept"
+    verdict = f"geomean {geomean:.2f}x ({sizes_str}), {mem_part}, stable -> kept"
     return {**record, "speedup": geomean, "verdict": verdict}
