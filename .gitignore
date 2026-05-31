@@ -63,4 +63,4 @@ rust_template/target/
 rust_template/dist/
 
 # Swarm A handoff (generated at runtime by analyze.py)
-candidates.json
+candidates*.json

@@ -100,11 +100,15 @@ class TargetSpec:
             return getattr(module, attr)
 
         if self.oracle_source:
-            entry = self.oracle_entry or self.name
+            entry = (self.oracle_entry or self.name).split(".")[-1]
+            import textwrap
+
             import numpy as np
 
             ns: dict = {"np": np, "numpy": np}  # common deps for self-ported numeric fns
-            exec(self.oracle_source, ns)  # trusted locally; Modal sandboxes it in the swarm
+            # dedent: Swarm A extracts class-method source with its original indentation,
+            # which is an IndentationError to exec verbatim. Normalize before exec/compile.
+            exec(textwrap.dedent(self.oracle_source), ns)  # trusted locally; Modal sandboxes in the swarm
             if entry not in ns:
                 raise ValueError(
                     f"oracle_source does not define {entry!r} "

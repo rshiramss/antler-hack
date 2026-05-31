@@ -49,26 +49,58 @@ secret = modal.Secret.from_dotenv()
 
 
 # ── The default target: the x*x+1 toy (reproduces the original hardcoded behavior) ──
-_TOY_SOURCE = """\
-def reference(x):
+# Default demo target: a PURE-PYTHON numeric hot loop (degree-5 polynomial via Horner,
+# evaluated per element). The oracle is genuinely slow interpreted Python — NOT a numpy
+# one-liner — so the Rust port's win is real and large, and because both sides are O(n)
+# the speedup is flat/growing with size (it does NOT collapse at scale like a C/numpy-
+# backed function would). Pure arithmetic, no transcendentals: the speedup is the loop.
+_DEMO_SOURCE = """\
+def poly_eval(x):
     out = np.empty_like(x)
     for i in range(x.shape[0]):
-        out[i] = x[i] * x[i] + 1.0
+        xi = x[i]
+        # fixed degree-5 polynomial, written out explicitly (pure multiply/add):
+        out[i] = ((((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0) * xi - 0.7) * xi + 1.1
     return out
 """
 
+# A correct, direct Rust Horner port — used only as the starting champion the LLM mutates
+# (the swarm never compiles the seed; the prompt carries the reference source).
+_DEMO_SEED_RUST = """\
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use pyo3::prelude::*;
 
-def _toy_spec() -> TargetSpec:
+#[pyfunction]
+fn solve<'py>(py: Python<'py>, x: PyReadonlyArray1<'py, f64>) -> Bound<'py, PyArray1<f64>> {
+    let view = x.as_array();
+    let out: Vec<f64> = view.iter().map(|&xi| {
+        ((((0.5 * xi - 1.2) * xi + 0.3) * xi + 2.0) * xi - 0.7) * xi + 1.1
+    }).collect();
+    out.into_pyarray(py)
+}
+
+#[pymodule]
+fn rust_solve(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(solve, m)?)?;
+    Ok(())
+}
+"""
+
+
+def _demo_spec() -> TargetSpec:
     return TargetSpec(
-        name="toy_square_plus_one",
-        description="Elementwise: out[i] = x[i] * x[i] + 1.0 over a 1-D f64 array.",
-        source=_TOY_SOURCE,
-        oracle_source=_TOY_SOURCE,
-        oracle_entry="reference",
+        name="poly_eval_hotloop",
+        description=("Evaluate this fixed degree-5 polynomial at each element of a 1-D f64 "
+                     "array, EXACTLY as written (do not reorder terms): "
+                     "out[i] = ((((0.5*x - 1.2)*x + 0.3)*x + 2.0)*x - 0.7)*x + 1.1. "
+                     "The reference is a pure-Python loop; match it to rtol/atol 1e-9."),
+        source=_DEMO_SOURCE,
+        oracle_source=_DEMO_SOURCE,
+        oracle_entry="poly_eval",
         module_name="rust_solve",          # must match the baked crate's [lib] name
         fn_name="solve",
         rust_signature=SOLVE_RUST_SIGNATURE,
-        seed_rust=SEED_RUST,
+        seed_rust=_DEMO_SEED_RUST,
         array_mode=True,
         rtol=1e-9,
         atol=1e-9,
@@ -113,7 +145,7 @@ def _load_spec() -> TargetSpec:
                 "Point analyze.py at functions with that shape, or pass an explicit oracle."
             )
         return spec
-    return _toy_spec()
+    return _demo_spec()
 
 
 # Runs in a FRESH subprocess per attempt (mirrors the local _validate.py design): loads the
