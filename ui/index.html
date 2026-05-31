@@ -6,7 +6,7 @@
 <title>RustForge — Swarm Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --line:#1d2535;
@@ -601,6 +601,158 @@
   .scorebar{background:#1B2230}
   .fnname{color:var(--ink)} .fnfile{color:var(--dim)}
   ::-webkit-scrollbar-thumb{background:#2A3445}
+
+/* ============================================================
+   RUSTFORGE — FINAL CONSOLIDATED SYSTEM (editorial-mono / instrument)
+   ONE token set + component rules, last so it wins the cascade over all
+   six accreted layers above. Deep navy + gold, no glow, mono-first,
+   tabular numerics, dual-coded a11y.
+   ============================================================ */
+:root{
+  --bg:#0a0d14; --panel:#11151f; --panel2:#0d1118; --raised:#161c27;
+  --line:#1d2535; --line2:#2c3a55;
+  --ink:#e7ecf5; --txt:#c3ccdb; --dim:#8e9bb1; --faint:#5a6678;
+  --gold:#fbbf24; --gold-hi:#ffd166; --gold-deep:#b07e10; --champ:#fbbf24;
+  --queued:#232c3b; --spawn:#5b8cff; --compile:#e0913a; --test:#a855f7;
+  --bench:#22b8c8; --pass:#22c55e; --fail:#ef4444; --crash:#9c5a24;
+  --add:rgba(34,197,94,.10); --addln:#5fdd9b; --del:rgba(239,68,68,.10); --delln:#ff8a98;
+  --lift:0 14px 34px -22px rgba(0,0,0,.6);
+  --display:"Space Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,"Cascadia Code",Consolas,monospace;
+}
+*{text-shadow:none}
+html,body{background:var(--bg)}
+body{color:var(--txt);font-family:var(--sans);font-size:14px;text-rendering:optimizeLegibility}
+b{font-weight:600;color:var(--ink)}
+
+/* header */
+header{background:linear-gradient(180deg,#0e1320,var(--bg));border-bottom:1px solid var(--line)}
+.logo{font-family:var(--display);font-weight:700;letter-spacing:-.01em;font-size:19px;color:var(--ink)}
+.logo b{color:var(--gold)}
+.tag{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:4px 12px}
+.stat .v{font-family:var(--mono);font-weight:600;font-size:21px;color:var(--ink);font-variant-numeric:tabular-nums}
+.stat .v.gold{color:var(--gold)} .stat .v.live{color:var(--bench)}
+.stat .l{font-size:9.5px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.hero{font-family:var(--mono);font-weight:500;font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+.hero b{color:var(--gold);font-size:21px;font-weight:600}
+select,button{font-family:var(--sans);font-weight:500;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;transition:border-color .15s,filter .15s}
+button:hover,select:hover{border-color:var(--line2)}
+button.run,.cands .forge{background:var(--gold);color:#1a1500;border:1px solid var(--gold);font-weight:700;box-shadow:none}
+button.run:hover,.cands .forge:hover{filter:brightness(1.06);background:var(--gold);border-color:var(--gold);color:#1a1500}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--dim)}
+.conn{color:var(--dim)} .dot{background:var(--faint);border-radius:999px}
+.dot.sim{background:var(--compile);box-shadow:none} .dot.liveok{background:var(--pass);box-shadow:none}
+
+/* funnel ledger */
+.funnel{background:var(--panel2);border-bottom:1px solid var(--line);padding:9px 20px}
+.fstep{padding:2px 16px;gap:3px} .fstep+.fstep{border-left:1px solid var(--line)}
+.fstep .n{font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.fstep .lab{font-size:10px;letter-spacing:.10em;color:var(--dim)} .fstep .lab b{color:var(--ink)}
+.fstep .arrow{color:var(--line2)}
+.fstep.gen .n{color:var(--dim)} .fstep.comp .n{color:var(--compile)} .fstep.ver .n{color:var(--test)}
+.fstep.fast .n{color:var(--pass)} .fstep.champ .n{color:var(--gold)}
+.fstep .sub{display:block;font-size:10px;color:var(--dim)}
+.fstep .sub .bad{color:var(--fail)}
+
+/* cards / heads */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:none}
+#board > .card{box-shadow:none} #board > .card.dragging{outline:2px solid var(--line2);outline-offset:-2px}
+.hd{background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);border-bottom:1px solid var(--line);padding:10px 15px}
+.hd h2{font-family:var(--display);font-weight:600;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.hd .sub{font-family:var(--mono);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* swarm grid (HERO) */
+.swarm-wrap{padding:14px} .grid{gap:7px}
+.cell{aspect-ratio:1/1;border-radius:6px;background:var(--queued);border:1px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);font-family:var(--mono);color:var(--txt);transition:background .25s,transform .12s}
+.cell .id{color:var(--dim);opacity:.82;font-size:7.5px}
+.cell .sp{font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.cell.spawning{background:var(--spawn);color:#fff}
+.cell.compiling{background:var(--compile);color:#241a05}
+.cell.testing{background:var(--test);color:#fff}
+.cell.benchmarking{background:var(--bench);color:#042427}
+.cell.passed{background:var(--pass);color:#04230f} .cell.passed .id{color:#04230f}
+.cell.failed{background:var(--fail);color:#fff} .cell.failed .id{color:#fff}
+.cell.crashed{background:var(--crash);border:1px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);color:#f0e2d2}
+.cell.crashed .id{color:#f0e2d2}
+.cell.champion{background:var(--gold);color:#1a1500;box-shadow:inset 0 0 0 2px rgba(255,255,255,.9);transform:scale(1.05);z-index:2}
+.cell.champion .id{color:#1a1500}
+.cell.active{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.72}50%{opacity:1}}
+.legend{gap:11px;font-size:10px;color:var(--dim)} .legend i{border-radius:3px}
+
+/* narration feed */
+.feed{font-family:var(--mono);color:var(--txt)}
+.line{border-bottom:1px solid rgba(255,255,255,.035);padding:5px 15px} .line .ic{color:var(--faint)}
+.line .tx{color:var(--txt)} .line .rd{color:var(--dim);font-variant-numeric:tabular-nums}
+.line.champ{background:rgba(251,191,36,.06)} .line.champ .tx,.line.champ .ic{color:var(--gold)}
+.line.hack .tx,.line.hack .ic{color:var(--delln)} .line.crash .tx{color:#cf8c52} .line.crash .ic{color:var(--crash)}
+.line.pass .tx,.line.pass .ic{color:var(--pass)} .line.stage .tx{color:var(--dim)} .line.round .tx{color:var(--ink)}
+.line.end{background:rgba(255,255,255,.025)} .line.end .tx{color:var(--dim)}
+
+/* champion diff */
+.diffbanner{background:linear-gradient(90deg,rgba(251,191,36,.07),transparent);border-bottom:1px solid var(--line);border-left:2px solid var(--gold);padding:11px 15px;gap:14px}
+.delta{font-family:var(--mono);font-size:16px;font-variant-numeric:tabular-nums}
+.delta .from{color:var(--faint)} .delta .to{color:var(--gold)} .delta .gain{color:var(--pass)}
+.why{font-size:12px;color:var(--dim);line-height:1.45} .why b{color:var(--ink)}
+.seg{border:1px solid var(--line);border-radius:8px}
+.seg button{background:transparent;color:var(--dim);font-size:10.5px;padding:6px 11px;border-radius:0}
+.seg button.on{background:var(--raised);color:var(--ink)}
+pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.62}
+.dl .g{width:24px;color:#5a6a82}
+.dl.add{background:var(--add);box-shadow:inset 2px 0 0 var(--pass)} .dl.add .g{color:var(--addln)}
+.dl.del{background:var(--del);box-shadow:inset 2px 0 0 var(--fail);color:var(--delln)} .dl.del .g{color:var(--delln)}
+.code .kw{color:#7aa2ff} .code .ty{color:#5ad6c0} .code .mac{color:#e6a35a}
+.code .fn{color:#f0c674} .code .num{color:#d19a66} .code .str{color:#9ece6a} .code .cm{color:var(--faint);font-style:italic}
+
+/* lineage ratchet */
+.node .bar{width:36px;background:linear-gradient(180deg,#33405a,#1b2434);border:1px solid var(--line2);border-radius:5px 5px 0 0}
+.node.on .bar{background:linear-gradient(180deg,var(--gold),var(--gold-deep));border-color:var(--gold)}
+.node .sp{font-family:var(--mono);font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums} .node.on .sp{color:var(--gold)}
+.node .desc,.node .rnd{color:var(--dim)} .conn-line{color:var(--line2)}
+
+/* journal */
+table{font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+thead th{background:var(--panel2);color:var(--dim);letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--line);padding:8px 13px}
+tbody td{border-bottom:1px solid rgba(255,255,255,.035);color:var(--txt);padding:7px 13px}
+tbody td.desc{color:var(--dim)}
+.pill{font-family:var(--sans);font-size:9px;letter-spacing:.06em;text-transform:uppercase;border-radius:5px;padding:3px 8px}
+.pill.keep{background:rgba(34,197,94,.14);color:var(--pass)}
+.pill.discard{background:rgba(239,68,68,.13);color:var(--fail)}
+.pill.crash{background:rgba(156,90,36,.18);color:#cf8c52}
+.rh{color:var(--delln)} .badge-hack{color:#FCA5A5;border:1px solid #5a2030;border-radius:5px}
+tbody tr.flash{animation:rowflash 1s ease} @keyframes rowflash{from{background:rgba(251,191,36,.10)}to{background:transparent}}
+
+/* landing + analysis */
+.screen{background:radial-gradient(900px 460px at 50% -4%,rgba(251,191,36,.05),transparent 62%),linear-gradient(180deg,#10151d,var(--bg))}
+#landing,#analysis{background:transparent}
+.logo.big{font-size:46px;letter-spacing:-.01em;margin-bottom:14px}
+.land-sub{color:var(--dim);font-size:15px;max-width:600px;margin:0 auto 30px;line-height:1.6} .land-sub b{color:var(--ink)}
+.land-input input{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;max-width:540px;padding:14px 16px}
+.land-input input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(251,191,36,.16)}
+.chip{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:6px 13px}
+.chip:hover{border-color:var(--gold);color:var(--ink)}
+.an-repo{font-family:var(--mono);color:var(--gold)}
+.an-scan{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:14px 16px;line-height:1.7}
+.an-title{font-family:var(--display);letter-spacing:.12em;color:var(--dim)} .an-title span{color:var(--gold)}
+table.cands th{color:var(--dim);border-bottom:1px solid var(--line)}
+table.cands td{border-bottom:1px solid var(--line);padding:16px 13px} table.cands tr.top{background:rgba(251,191,36,.05)}
+table.cands tbody tr:hover{background:rgba(255,255,255,.025)}
+.fnname{font-family:var(--mono);color:var(--ink);font-size:14px} .fnfile{font-family:var(--mono);color:var(--dim);font-size:11px}
+.sig{border:1px solid var(--line2);color:var(--dim);border-radius:5px;text-transform:uppercase;letter-spacing:.04em}
+.sig.on{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4);color:#86EFAC}
+.scorebar{background:#1B2230;border-radius:8px} .scorebar i{background:linear-gradient(90deg,#36425a,var(--bench))}
+.cands .forge{border-radius:8px;padding:8px 15px}
+
+/* bento window chrome */
+.win-btn{background:var(--raised);border:1px solid var(--line);color:var(--dim);border-radius:5px}
+.win-btn:hover{border-color:var(--line2);color:var(--ink)}
+.win-rsz::after{border-right:2px solid var(--line2);border-bottom:2px solid var(--line2)}
+#board > .card:hover .win-rsz::after,#board > .card.resizing .win-rsz::after{border-color:var(--dim)}
+::-webkit-scrollbar-thumb{background:#2a3445;border:2px solid var(--panel);border-radius:6px} ::-webkit-scrollbar-track{background:transparent}
+
+/* AA: promote sub-12px labels off --faint onto --dim */
+.stat .l,.fstep .lab,.fstep .sub,.node .desc,.node .rnd,.fnfile,.hd .sub,.line .rd,thead th,table.cands th{color:var(--dim)}
 </style>
 </head>
 <body>
